@@ -6,6 +6,7 @@ import typer
 from rich.console import Console
 
 from magister_cli.auth import get_current_token, login, logout
+from magister_cli.cli.progress import print_error, print_success, print_warning
 from magister_cli.config import get_settings
 
 console = Console()
@@ -77,24 +78,34 @@ def do_login(
 
     console.print(f"Opening browser for login to [cyan]{school_code}.magister.net[/cyan]...")
     console.print("[dim]Complete the login process in the browser window.[/dim]")
+    console.print()
 
     if headless:
-        console.print("[yellow]Warning:[/yellow] Running in headless mode - you won't see the browser.")
+        print_warning("Running in headless mode - you won't see the browser.")
 
     try:
-        token = login(school_code, headless=headless)
-        console.print("\n[green]Login successful![/green]")
-        console.print(f"Token saved for school: [cyan]{token.school}[/cyan]")
+        # Show spinner while waiting for OAuth
+        with console.status(
+            "[bold blue]Wacht op login via browser...",
+            spinner="dots",
+        ):
+            token = login(school_code, headless=headless)
+
+        print_success("Login gelukt!")
+        console.print(f"  School: [cyan]{token.school}[/cyan]")
+
+        if token.person_name:
+            console.print(f"  Gebruiker: [bold]{token.person_name}[/bold]")
 
         if token.expires_at:
-            console.print(f"[dim]Token expires: {token.expires_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+            console.print(f"  [dim]Token geldig tot: {token.expires_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
 
     except RuntimeError as e:
-        console.print(f"\n[red]Login failed:[/red] {e}")
+        print_error(f"Login mislukt: {e}")
         raise typer.Exit(1)
     except Exception as e:
-        console.print(f"\n[red]Unexpected error:[/red] {e}")
-        console.print("\n[dim]If Playwright browser is not installed, run:[/dim]")
+        print_error(f"Onverwachte fout: {e}")
+        console.print("\n[dim]Als Playwright browser niet is geïnstalleerd, voer uit:[/dim]")
         console.print("[cyan]playwright install chromium[/cyan]")
         raise typer.Exit(1)
 
@@ -114,6 +125,6 @@ def do_logout(
         console.print("[yellow]No school specified. Using default.[/yellow]")
 
     if logout(school_code):
-        console.print("[green]Logged out successfully.[/green]")
+        print_success("Uitgelogd.")
     else:
-        console.print("[yellow]No token found to remove.[/yellow]")
+        print_warning("Geen token gevonden om te verwijderen.")

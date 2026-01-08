@@ -1,8 +1,36 @@
 """Configuration management using Pydantic Settings."""
 
+import re
 from pathlib import Path
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def validate_school_code(school: str | None) -> str:
+    """Validate school code format to prevent SSRF/phishing.
+
+    Args:
+        school: School code to validate
+
+    Returns:
+        Normalized (lowercase) school code
+
+    Raises:
+        ValueError: If school code is invalid
+    """
+    if not school:
+        raise ValueError("School code cannot be empty")
+
+    # Only allow alphanumeric characters and hyphens
+    if not re.match(r"^[a-zA-Z0-9-]+$", school):
+        raise ValueError(f"Invalid school code format: {school}")
+
+    # Reasonable length limit
+    if len(school) > 50:
+        raise ValueError("School code too long (max 50 characters)")
+
+    return school.lower()
 
 
 class Settings(BaseSettings):

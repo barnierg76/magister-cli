@@ -1,9 +1,15 @@
-"""HTTP client for Magister API with retry logic and rate limiting."""
+"""Magister API facade with resource accessors."""
 
+from __future__ import annotations
+
+import logging
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -11,63 +17,70 @@ from tenacity import (
     wait_exponential,
 )
 
-from pathlib import Path
-
-from magister_cli.api.models import (
-    Account,
-    Afspraak,
-    AfspraakResponse,
-    Bijlage,
-    Cijfer,
-    CijferResponse,
-    Kind,
-    KindResponse,
+from magister_cli.api.exceptions import (
+    MagisterAPIError,
+    RateLimitError,
+    TokenExpiredError,
 )
-from magister_cli.config import get_settings
-
-
-class MagisterAPIError(Exception):
-    """Base exception for Magister API errors."""
-
-    def __init__(self, message: str, status_code: int | None = None):
-        super().__init__(message)
-        self.status_code = status_code
-
-
-class TokenExpiredError(MagisterAPIError):
-    """Token has expired and needs refresh."""
-
-    pass
-
-
-class RateLimitError(MagisterAPIError):
-    """Rate limit exceeded."""
-
-    def __init__(self, message: str, retry_after: int = 60):
-        super().__init__(message, 429)
-        self.retry_after = retry_after
+from magister_cli.api.models import Account, Afspraak, Bijlage, Cijfer, Kind
+from magister_cli.api.resources import (
+    AccountResource,
+    AppointmentsResource,
+    AttachmentsResource,
+    GradesResource,
+    MessagesResource,
+)
+from magister_cli.config import get_settings, validate_school_code
 
 
 class MagisterClient:
-    """Synchronous HTTP client for Magister API."""
+    """Facade for Magister API with lazy-loaded resources.
+
+    This client provides two ways to interact with the API:
+
+    1. Direct methods (backward compatible):
+       ```
+       with MagisterClient(school, token) as client:
+           homework = client.get_homework(start, end)
+       ```
+
+    2. Resource accessors (new pattern):
+       ```
+       with MagisterClient(school, token) as client:
+           homework = client.appointments.with_homework(start, end)
+       ```
+
+    The resource pattern is preferred for new code as it provides better
+    organization and makes it easy to add new endpoints.
+    """
 
     def __init__(self, school: str, token: str, timeout: int | None = None):
-        self.school = school
+        # Validate school code to prevent SSRF
+        self.school = validate_school_code(school)
         self.token = token
-        self._client: httpx.Client | None = None
         self._timeout = timeout or get_settings().timeout
-        self._account_id: int | None = None  # The logged-in account's ID
-        self._student_id: int | None = None  # The student's ID (may differ for parents)
+        self._client: httpx.Client | None = None
+
+        # State
+        self._account_id: int | None = None
+        self._student_id: int | None = None
         self._person_name: str | None = None
         self._is_parent: bool = False
         self._children: list[Kind] | None = None
+
+        # Resources (lazy initialized)
+        self._account_resource: AccountResource | None = None
+        self._appointments_resource: AppointmentsResource | None = None
+        self._grades_resource: GradesResource | None = None
+        self._attachments_resource: AttachmentsResource | None = None
+        self._messages_resource: MessagesResource | None = None
 
     @property
     def base_url(self) -> str:
         """Get the base URL for this school's Magister API."""
         return f"https://{self.school}.magister.net/api"
 
-    def __enter__(self) -> "MagisterClient":
+    def __enter__(self) -> MagisterClient:
         """Enter context manager, creating HTTP client."""
         self._client = httpx.Client(
             base_url=self.base_url,
@@ -85,11 +98,80 @@ class MagisterClient:
         if self._client:
             self._client.close()
             self._client = None
+        # Reset resources
+        self._account_resource = None
+        self._appointments_resource = None
+        self._grades_resource = None
+        self._attachments_resource = None
+        self._messages_resource = None
 
-    def _check_client(self) -> None:
+    def _ensure_client(self) -> httpx.Client:
         """Ensure client is initialized."""
         if self._client is None:
             raise RuntimeError("Client not initialized - use 'with' context manager")
+        return self._client
+
+    def _ensure_student_id(self) -> int:
+        """Ensure student_id is available, fetching account if needed."""
+        if self._student_id is None:
+            self.get_account()
+        assert self._student_id is not None
+        return self._student_id
+
+    # -------------------------------------------------------------------------
+    # Resource accessors (new pattern)
+    # -------------------------------------------------------------------------
+
+    @property
+    def account(self) -> AccountResource:
+        """Access account-related API methods."""
+        if self._account_resource is None:
+            self._account_resource = AccountResource(self._ensure_client(), 0)
+        return self._account_resource
+
+    @property
+    def appointments(self) -> AppointmentsResource:
+        """Access appointment-related API methods."""
+        if self._appointments_resource is None:
+            self._appointments_resource = AppointmentsResource(
+                self._ensure_client(), self._ensure_student_id()
+            )
+        return self._appointments_resource
+
+    @property
+    def grades(self) -> GradesResource:
+        """Access grade-related API methods."""
+        if self._grades_resource is None:
+            self._grades_resource = GradesResource(
+                self._ensure_client(), self._ensure_student_id()
+            )
+        return self._grades_resource
+
+    @property
+    def attachments(self) -> AttachmentsResource:
+        """Access attachment download methods."""
+        if self._attachments_resource is None:
+            self._attachments_resource = AttachmentsResource(
+                self._ensure_client(),
+                self._ensure_student_id(),
+                self.base_url,
+                self.token,
+                self._timeout,
+            )
+        return self._attachments_resource
+
+    @property
+    def messages(self) -> MessagesResource:
+        """Access message-related API methods."""
+        if self._messages_resource is None:
+            self._messages_resource = MessagesResource(
+                self._ensure_client(), self._ensure_student_id()
+            )
+        return self._messages_resource
+
+    # -------------------------------------------------------------------------
+    # Direct methods (backward compatible)
+    # -------------------------------------------------------------------------
 
     def _handle_response(self, response: httpx.Response) -> Any:
         """Handle API response, raising appropriate errors."""
@@ -101,8 +183,10 @@ class MagisterClient:
             raise RateLimitError("Rate limit exceeded", retry_after)
 
         if response.status_code >= 400:
+            # Log detailed error for debugging, but don't expose raw response to users
+            logger.error(f"API error: {response.status_code} - {response.text}")
             raise MagisterAPIError(
-                f"API error: {response.status_code} - {response.text}",
+                f"API request failed ({response.status_code})",
                 response.status_code,
             )
 
@@ -116,10 +200,8 @@ class MagisterClient:
     )
     def _request(self, method: str, endpoint: str, **kwargs) -> Any:
         """Make an API request with retry logic."""
-        self._check_client()
-        assert self._client is not None
-
-        response = self._client.request(method, endpoint, **kwargs)
+        client = self._ensure_client()
+        response = client.request(method, endpoint, **kwargs)
         return self._handle_response(response)
 
     def get_account(self) -> Account:
@@ -154,129 +236,48 @@ class MagisterClient:
 
         try:
             data = self._request("GET", f"/personen/{self._account_id}/kinderen")
-            response = KindResponse.from_response(data)
-            self._children = response.items
+            if isinstance(data, dict) and "Items" in data:
+                self._children = [Kind.model_validate(item) for item in data["Items"]]
+            elif isinstance(data, list):
+                self._children = [Kind.model_validate(item) for item in data]
+            else:
+                self._children = []
             return self._children
         except MagisterAPIError:
             # Not a parent account or no children
             return []
 
-    def _ensure_student_id(self) -> int:
-        """Ensure student_id is available, fetching account if needed."""
-        if self._student_id is None:
-            self.get_account()
-        assert self._student_id is not None
-        return self._student_id
-
     def get_appointments(self, start: date, end: date) -> list[Afspraak]:
         """Get appointments for a date range."""
-        student_id = self._ensure_student_id()
-
-        data = self._request(
-            "GET",
-            f"/personen/{student_id}/afspraken",
-            params={"van": start.isoformat(), "tot": end.isoformat()},
-        )
-
-        response = AfspraakResponse.from_response(data)
-        return response.items
+        return self.appointments.list(start, end)
 
     def get_homework(self, start: date, end: date) -> list[Afspraak]:
         """Get appointments that have homework."""
-        appointments = self.get_appointments(start, end)
-        return [a for a in appointments if a.heeft_huiswerk]
-
-    def get_recent_grades(self, limit: int = 10) -> list[Cijfer]:
-        """Get recent grades."""
-        student_id = self._ensure_student_id()
-
-        data = self._request(
-            "GET",
-            f"/personen/{student_id}/cijfers/laatste",
-            params={"top": limit},
-        )
-
-        response = CijferResponse.from_response(data)
-        return response.items
-
-    def get_schedule(self, date_: date) -> list[Afspraak]:
-        """Get schedule for a specific date."""
-        return self.get_appointments(date_, date_)
-
-    def get_appointment(self, afspraak_id: int) -> Afspraak:
-        """Get a single appointment with full details including attachments."""
-        student_id = self._ensure_student_id()
-
-        data = self._request(
-            "GET",
-            f"/personen/{student_id}/afspraken/{afspraak_id}",
-        )
-
-        return Afspraak.model_validate(data)
+        return self.appointments.with_homework(start, end)
 
     def get_homework_with_attachments(self, start: date, end: date) -> list[Afspraak]:
         """Get homework with attachments populated for items that have them."""
-        appointments = self.get_homework(start, end)
+        return self.appointments.with_attachments(start, end)
 
-        # For items with attachments, fetch full details
-        result = []
-        for afspraak in appointments:
-            if afspraak.heeft_bijlagen:
-                # Fetch full appointment to get bijlagen
-                full_afspraak = self.get_appointment(afspraak.id)
-                result.append(full_afspraak)
-            else:
-                result.append(afspraak)
+    def get_appointment(self, afspraak_id: int) -> Afspraak:
+        """Get a single appointment with full details including attachments."""
+        return self.appointments.get(afspraak_id)
 
-        return result
+    def get_recent_grades(self, limit: int = 10) -> list[Cijfer]:
+        """Get recent grades."""
+        return self.grades.recent(limit)
+
+    def get_schedule(self, date_: date) -> list[Afspraak]:
+        """Get schedule for a specific date."""
+        return self.appointments.for_date(date_)
 
     def download_attachment(self, bijlage: Bijlage, output_dir: Path | None = None) -> Path:
         """Download an attachment to the specified directory."""
-        self._check_client()
-        assert self._client is not None
+        return self.attachments.download(bijlage, output_dir)
 
-        download_path = bijlage.download_path
-        if not download_path:
-            raise MagisterAPIError(f"No download path for attachment: {bijlage.naam}")
-
-        # The download path from API includes /api/ prefix, but our base_url already ends with /api
-        # So we need to strip the /api prefix from the download path
-        if download_path.startswith("/api/"):
-            download_path = download_path[4:]  # Remove "/api" prefix
-
-        # Build full URL and use a new client with redirect support for downloads
-        full_url = f"{self.base_url}{download_path}"
-        with httpx.Client(
-            headers={"Authorization": f"Bearer {self.token}"},
-            timeout=self._timeout,
-            follow_redirects=True,
-        ) as download_client:
-            response = download_client.get(full_url)
-
-        if response.status_code >= 400:
-            raise MagisterAPIError(
-                f"Failed to download attachment: {response.status_code}",
-                response.status_code,
-            )
-
-        # Determine output path
-        if output_dir is None:
-            output_dir = Path.cwd()
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        output_path = output_dir / bijlage.naam
-
-        # Handle duplicate filenames
-        if output_path.exists():
-            stem = output_path.stem
-            suffix = output_path.suffix
-            counter = 1
-            while output_path.exists():
-                output_path = output_dir / f"{stem}_{counter}{suffix}"
-                counter += 1
-
-        output_path.write_bytes(response.content)
-        return output_path
+    # -------------------------------------------------------------------------
+    # Properties (backward compatible)
+    # -------------------------------------------------------------------------
 
     @property
     def person_id(self) -> int | None:

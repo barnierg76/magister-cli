@@ -61,7 +61,7 @@ class HomeworkItem:
             lesson_number=afspraak.les_uur,
             location=afspraak.lokaal_naam,
             teacher=afspraak.docent_naam,
-            is_test=afspraak.is_toets,
+            is_test=afspraak.is_test_or_exam(),
             is_completed=afspraak.afgerond,
             attachments=attachments,
             raw=afspraak,
