@@ -2,11 +2,15 @@
 
 from datetime import date, timedelta
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+# Dutch timezone
+LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
 from magister_cli.api import MagisterAPIError, MagisterClient, TokenExpiredError
 from magister_cli.api.models import Afspraak
@@ -40,9 +44,12 @@ def _get_client(school: str | None) -> tuple[MagisterClient, str]:
 
 
 def _format_time_range(afspraak: Afspraak) -> str:
-    """Format start-end time."""
-    start = afspraak.start.strftime("%H:%M")
-    end = afspraak.einde.strftime("%H:%M")
+    """Format start-end time in local timezone."""
+    # Convert UTC to Dutch time
+    start_local = afspraak.start.astimezone(LOCAL_TZ)
+    end_local = afspraak.einde.astimezone(LOCAL_TZ)
+    start = start_local.strftime("%H:%M")
+    end = end_local.strftime("%H:%M")
     return f"{start}-{end}"
 
 
@@ -91,8 +98,8 @@ def _display_day_schedule(appointments: list[Afspraak], day: date) -> None:
         console.print()
         return
 
-    # Sort by lesson hour then start time
-    appointments.sort(key=lambda a: (a.les_uur or 99, a.start))
+    # Sort by start time (primary), then lesson hour (secondary)
+    appointments.sort(key=lambda a: (a.start, a.les_uur or 0))
 
     for afspraak in appointments:
         time_str = _format_time_range(afspraak)
