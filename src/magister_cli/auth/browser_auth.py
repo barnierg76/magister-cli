@@ -1,5 +1,6 @@
 """Browser-based OAuth authentication using Playwright."""
 
+import html
 import socket
 import threading
 from datetime import datetime, timedelta
@@ -9,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import Page, sync_playwright
 
 from magister_cli.auth.token_manager import TokenData, get_token_manager
-from magister_cli.config import get_settings
+from magister_cli.config import get_settings, validate_school_code
 
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
@@ -39,8 +40,10 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         """Send success HTML response."""
         self.send_response(200)
         self.send_header("Content-type", "text/html")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
-        html = """
+        response_html = """
         <!DOCTYPE html>
         <html>
         <head><title>Magister CLI - Login Successful</title></head>
@@ -50,25 +53,29 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         </body>
         </html>
         """
-        self.wfile.write(html.encode())
+        self.wfile.write(response_html.encode())
 
     def _send_error_response(self, error: str):
         """Send error HTML response."""
         self.send_response(400)
         self.send_header("Content-type", "text/html")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
-        html = f"""
+        # Escape error message to prevent XSS
+        safe_error = html.escape(error)
+        response_html = f"""
         <!DOCTYPE html>
         <html>
         <head><title>Magister CLI - Login Failed</title></head>
         <body style="font-family: system-ui; text-align: center; padding: 50px;">
             <h1>Login Failed</h1>
-            <p>Error: {error}</p>
+            <p>Error: {safe_error}</p>
             <p>Please close this window and try again.</p>
         </body>
         </html>
         """
-        self.wfile.write(html.encode())
+        self.wfile.write(response_html.encode())
 
     def log_message(self, format, *args):
         """Suppress HTTP server logging."""
@@ -127,7 +134,8 @@ class BrowserAuthenticator:
     """Handle browser-based OAuth authentication for Magister."""
 
     def __init__(self, school: str, headless: bool | None = None):
-        self.school = school
+        # Validate school code to prevent SSRF
+        self.school = validate_school_code(school)
         self.settings = get_settings()
         self.headless = headless if headless is not None else self.settings.headless
 

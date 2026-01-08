@@ -140,9 +140,9 @@ class TestHomeworkService:
         client_instance = MagicMock()
         client_instance.__enter__ = MagicMock(return_value=client_instance)
         client_instance.__exit__ = MagicMock(return_value=False)
-        client_instance.get_homework.return_value = [
-            a for a in sample_afspraken if a.heeft_huiswerk
-        ]
+        hw_items = [a for a in sample_afspraken if a.heeft_huiswerk]
+        client_instance.get_homework.return_value = hw_items
+        client_instance.get_homework_with_attachments.return_value = hw_items
         mock_client.return_value = client_instance
 
         service = HomeworkService(school="vsvonh")
@@ -158,9 +158,9 @@ class TestHomeworkService:
         client_instance = MagicMock()
         client_instance.__enter__ = MagicMock(return_value=client_instance)
         client_instance.__exit__ = MagicMock(return_value=False)
-        client_instance.get_homework.return_value = [
-            a for a in sample_afspraken if a.heeft_huiswerk
-        ]
+        hw_items = [a for a in sample_afspraken if a.heeft_huiswerk]
+        client_instance.get_homework.return_value = hw_items
+        client_instance.get_homework_with_attachments.return_value = hw_items
         mock_client.return_value = client_instance
 
         service = HomeworkService(school="vsvonh")
@@ -177,9 +177,9 @@ class TestHomeworkService:
         client_instance = MagicMock()
         client_instance.__enter__ = MagicMock(return_value=client_instance)
         client_instance.__exit__ = MagicMock(return_value=False)
-        client_instance.get_homework.return_value = [
-            a for a in sample_afspraken if a.heeft_huiswerk
-        ]
+        hw_items = [a for a in sample_afspraken if a.heeft_huiswerk]
+        client_instance.get_homework.return_value = hw_items
+        client_instance.get_homework_with_attachments.return_value = hw_items
         mock_client.return_value = client_instance
 
         service = HomeworkService(school="vsvonh")
@@ -194,9 +194,9 @@ class TestHomeworkService:
         client_instance = MagicMock()
         client_instance.__enter__ = MagicMock(return_value=client_instance)
         client_instance.__exit__ = MagicMock(return_value=False)
-        client_instance.get_homework.return_value = [
-            a for a in sample_afspraken if a.heeft_huiswerk
-        ]
+        hw_items = [a for a in sample_afspraken if a.heeft_huiswerk]
+        client_instance.get_homework.return_value = hw_items
+        client_instance.get_homework_with_attachments.return_value = hw_items
         mock_client.return_value = client_instance
 
         service = HomeworkService(school="vsvonh")
