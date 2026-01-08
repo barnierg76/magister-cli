@@ -21,25 +21,7 @@ from magister_cli.services.core import (
     MagisterCore,
     ScheduleItem,
 )
-
-
-def _sanitize_filename(filename: str) -> str:
-    """Sanitize filename to prevent path traversal.
-
-    Args:
-        filename: The filename to sanitize
-
-    Returns:
-        Safe filename with dangerous characters removed
-    """
-    # Remove path separators and parent directory references
-    safe_name = filename.replace("/", "_").replace("\\", "_").replace("..", "_")
-    # Remove null bytes and other control characters
-    safe_name = "".join(c for c in safe_name if c.isprintable())
-    # Limit length
-    if len(safe_name) > 255:
-        safe_name = safe_name[:255]
-    return safe_name or "unnamed_file"
+from magister_cli.utils.files import sanitize_filename
 
 
 class MagisterAsyncService:
@@ -394,7 +376,7 @@ class MagisterAsyncService:
         response.raise_for_status()
 
         # Sanitize filename to prevent path traversal
-        safe_filename = _sanitize_filename(attachment.name)
+        safe_filename = sanitize_filename(attachment.name)
         output_path = (output_dir / safe_filename).resolve()
 
         # Validate path is within output_dir (prevent path traversal)
@@ -417,13 +399,15 @@ class MagisterAsyncService:
         days: int = 7,
         output_dir: Optional[Path] = None,
         subject: Optional[str] = None,
+        max_concurrent: int = 5,
     ) -> List[dict]:
-        """Download all attachments from upcoming homework.
+        """Download all attachments from upcoming homework concurrently.
 
         Args:
             days: Number of days to look ahead
             output_dir: Directory to save to
             subject: Filter by subject
+            max_concurrent: Maximum concurrent downloads (default 5)
 
         Returns:
             List of download results with paths
@@ -434,28 +418,187 @@ class MagisterAsyncService:
         # Get homework with attachments
         homework = await self.get_homework(days=days, subject=subject)
 
-        # Collect all attachments
-        downloads = []
-        for item in homework:
-            for att in item.attachments:
-                # Create subject subdirectory
-                subject_dir = output_dir / item.subject.replace("/", "-")
-                subject_dir.mkdir(parents=True, exist_ok=True)
+        # Semaphore to limit concurrent downloads
+        semaphore = asyncio.Semaphore(max_concurrent)
 
+        async def download_with_limit(
+            attachment: AttachmentInfo,
+            subject_dir: Path,
+            subject_name: str,
+        ) -> dict:
+            """Download a single attachment with semaphore limit."""
+            async with semaphore:
                 try:
-                    path = await self.download_attachment(att, subject_dir)
-                    downloads.append({
-                        "name": att.name,
+                    path = await self.download_attachment(attachment, subject_dir)
+                    return {
+                        "name": attachment.name,
                         "path": str(path),
-                        "subject": item.subject,
+                        "subject": subject_name,
                         "success": True,
-                    })
+                    }
                 except Exception as e:
-                    downloads.append({
-                        "name": att.name,
-                        "subject": item.subject,
+                    return {
+                        "name": attachment.name,
+                        "subject": subject_name,
                         "success": False,
                         "error": str(e),
-                    })
+                    }
 
+        # Collect all download tasks
+        tasks = []
+        for item in homework:
+            # Create subject subdirectory
+            subject_dir = output_dir / item.subject.replace("/", "-")
+            subject_dir.mkdir(parents=True, exist_ok=True)
+
+            for att in item.attachments:
+                tasks.append(download_with_limit(att, subject_dir, item.subject))
+
+        # Execute all downloads concurrently (if any)
+        if not tasks:
+            return []
+
+        downloads = await asyncio.gather(*tasks, return_exceptions=False)
         return downloads
+
+    # -------------------------------------------------------------------------
+    # Message Operations
+    # -------------------------------------------------------------------------
+
+    async def get_messages(
+        self,
+        folder: str = "inbox",
+        limit: int = 25,
+        unread_only: bool = False,
+    ) -> List[dict]:
+        """Get messages from the student's mailbox.
+
+        Args:
+            folder: Which folder to read - 'inbox', 'sent', or 'deleted'
+            limit: Maximum number of messages to return
+            unread_only: If True, only return unread messages
+
+        Returns:
+            List of message dictionaries
+        """
+        client = self._ensure_client()
+
+        # Map folder to endpoint
+        folder_map = {
+            "inbox": "/berichten/postvakin/berichten",
+            "sent": "/berichten/verzendenitems/berichten",
+            "deleted": "/berichten/verwijderditems/berichten",
+        }
+
+        endpoint = folder_map.get(folder)
+        if endpoint is None:
+            raise ValueError(f"Invalid folder: {folder}. Must be 'inbox', 'sent', or 'deleted'")
+
+        response = await client.get(endpoint, params={"top": limit, "skip": 0})
+        response.raise_for_status()
+
+        data = response.json()
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+
+        # Convert to simple dicts
+        messages = []
+        for item in items:
+            # Skip read messages if unread_only is True
+            if unread_only and item.get("IsGelezen", True):
+                continue
+
+            afzender = item.get("Afzender", {})
+            messages.append({
+                "id": item.get("Id"),
+                "subject": item.get("Onderwerp"),
+                "sender_name": afzender.get("Naam"),
+                "sender_type": afzender.get("Type"),
+                "sent_at": item.get("VerzondOp"),
+                "is_read": item.get("IsGelezen", False),
+                "has_attachments": item.get("HeeftBijlagen", False),
+                "priority": item.get("Prioriteit"),
+                "has_priority": item.get("HeeftPrioriteit", False),
+            })
+
+        return messages
+
+    async def get_message(self, message_id: int) -> dict:
+        """Get full message details including body and attachments.
+
+        Args:
+            message_id: The ID of the message to read
+
+        Returns:
+            Full message dictionary with body, recipients, attachments
+        """
+        client = self._ensure_client()
+        response = await client.get(f"/berichten/{message_id}")
+        response.raise_for_status()
+
+        data = response.json()
+        afzender = data.get("Afzender", {})
+
+        # Parse recipients
+        ontvangers = []
+        for o in data.get("Ontvangers", []):
+            ontvangers.append({
+                "id": o.get("Id"),
+                "name": o.get("Naam"),
+                "type": o.get("Type"),
+            })
+
+        # Parse CC recipients
+        cc_ontvangers = []
+        for cc in data.get("CCOntvangers", []):
+            cc_ontvangers.append({
+                "id": cc.get("Id"),
+                "name": cc.get("Naam"),
+                "type": cc.get("Type"),
+            })
+
+        # Parse attachments
+        bijlagen = []
+        for b in data.get("Bijlagen", []):
+            bijlagen.append({
+                "id": b.get("Id"),
+                "name": b.get("Naam"),
+                "mime_type": b.get("ContentType"),
+                "size": b.get("Grootte"),
+            })
+
+        return {
+            "id": data.get("Id"),
+            "subject": data.get("Onderwerp"),
+            "sender_name": afzender.get("Naam"),
+            "sender_type": afzender.get("Type"),
+            "sender_id": afzender.get("Id"),
+            "sent_at": data.get("VerzondOp"),
+            "is_read": data.get("IsGelezen", False),
+            "has_attachments": data.get("HeeftBijlagen", False),
+            "priority": data.get("Prioriteit"),
+            "has_priority": data.get("HeeftPrioriteit", False),
+            "body": data.get("Inhoud", ""),
+            "recipients": ontvangers,
+            "cc_recipients": cc_ontvangers,
+            "attachments": bijlagen,
+        }
+
+    async def get_unread_message_count(self) -> int:
+        """Get count of unread messages in inbox.
+
+        Returns:
+            Number of unread messages
+        """
+        # Get first page and count unread
+        messages = await self.get_messages(folder="inbox", limit=100, unread_only=True)
+        return len(messages)
+
+    async def mark_message_as_read(self, message_id: int) -> None:
+        """Mark a message as read.
+
+        Args:
+            message_id: The ID of the message to mark as read
+        """
+        client = self._ensure_client()
+        response = await client.put(f"/berichten/{message_id}/gelezen")
+        response.raise_for_status()

@@ -393,6 +393,318 @@ async def get_schedule(
 
 
 @mcp.tool()
+@mcp_error_handler
+async def get_grade_overview(school_code: str) -> dict:
+    """
+    Get an overview of grades with per-subject averages.
+
+    Analyzes all recent grades and provides statistics per subject including
+    average, count, minimum, and maximum grades.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        Overview with:
+        - Per-subject statistics (average, count, min, max)
+        - Total grade count
+        - Overall weighted average
+    """
+    async with MagisterAsyncService(school_code) as service:
+        grades = await service.get_recent_grades(limit=100)
+
+        # Group by subject
+        by_subject = {}
+        for grade in grades:
+            subject = grade.subject
+            if subject not in by_subject:
+                by_subject[subject] = []
+            try:
+                # Parse grade as float (Dutch uses comma as decimal)
+                value = float(grade.grade.replace(",", "."))
+                by_subject[subject].append(value)
+            except (ValueError, AttributeError):
+                pass  # Skip non-numeric grades like "V" or "G"
+
+        # Calculate statistics per subject
+        overview = {}
+        for subject, values in by_subject.items():
+            if values:
+                overview[subject] = {
+                    "average": round(sum(values) / len(values), 2),
+                    "count": len(values),
+                    "min": min(values),
+                    "max": max(values),
+                }
+
+        # Calculate overall average
+        overall_average = service.core.calculate_average(grades)
+
+        return {
+            "success": True,
+            "subjects": overview,
+            "total_grades": sum(len(v) for v in by_subject.values()),
+            "overall_average": overall_average,
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_grade_trends(
+    school_code: str,
+    period_days: int = 90,
+) -> dict:
+    """
+    Identify improving or declining subjects based on grade trends.
+
+    Analyzes grade patterns over time to identify which subjects are
+    improving, declining, or remaining stable. Uses a simple trend
+    analysis comparing early vs recent grades.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        period_days: Number of days to analyze (default: 90)
+
+    Returns:
+        Trends with:
+        - Improving subjects with change magnitude
+        - Declining subjects with change magnitude
+        - Stable subjects
+        - Period analyzed
+    """
+    async with MagisterAsyncService(school_code) as service:
+        grades = await service.get_recent_grades(limit=200)
+
+        # Group grades by subject
+        by_subject = {}
+        for grade in grades:
+            subject = grade.subject
+            if subject not in by_subject:
+                by_subject[subject] = []
+            try:
+                value = float(grade.grade.replace(",", "."))
+                by_subject[subject].append(value)
+            except (ValueError, AttributeError):
+                pass
+
+        # Analyze trends (compare first half vs second half)
+        improving = []
+        declining = []
+        stable = []
+
+        for subject, values in by_subject.items():
+            if len(values) >= 4:  # Need at least 4 grades for trend
+                mid = len(values) // 2
+                first_half_avg = sum(values[:mid]) / mid
+                second_half_avg = sum(values[mid:]) / (len(values) - mid)
+                diff = second_half_avg - first_half_avg
+
+                if diff > 0.5:
+                    improving.append({"subject": subject, "change": round(diff, 2)})
+                elif diff < -0.5:
+                    declining.append({"subject": subject, "change": round(diff, 2)})
+                else:
+                    stable.append({"subject": subject, "change": round(diff, 2)})
+
+        return {
+            "success": True,
+            "improving": improving,
+            "declining": declining,
+            "stable": stable,
+            "period_days": period_days,
+            "total_subjects_analyzed": len(improving) + len(declining) + len(stable),
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_grades_by_subject(
+    school_code: str,
+    subject: str,
+) -> dict:
+    """
+    Get all grades for a specific subject.
+
+    Filters grades by subject name and provides detailed statistics
+    for that subject alone.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        subject: Subject name to filter by (case-insensitive partial match)
+
+    Returns:
+        Subject grades with:
+        - List of matching grades
+        - Statistics (average, count, min, max)
+        - Subject filter used
+    """
+    async with MagisterAsyncService(school_code) as service:
+        all_grades = await service.get_recent_grades(limit=200)
+
+        # Filter by subject (case-insensitive partial match)
+        subject_lower = subject.lower()
+        matching = [
+            g for g in all_grades
+            if subject_lower in g.subject.lower()
+        ]
+
+        # Calculate stats
+        numeric_values = []
+        for g in matching:
+            try:
+                value = float(g.grade.replace(",", "."))
+                numeric_values.append(value)
+            except (ValueError, AttributeError):
+                pass
+
+        stats = {}
+        if numeric_values:
+            stats = {
+                "average": round(sum(numeric_values) / len(numeric_values), 2),
+                "count": len(numeric_values),
+                "min": min(numeric_values),
+                "max": max(numeric_values),
+            }
+
+        return {
+            "success": True,
+            "subject_filter": subject,
+            "grades": [g.to_dict() for g in matching],
+            "statistics": stats,
+            "total_grades": len(matching),
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_messages(
+    school_code: str,
+    folder: str = "inbox",
+    limit: int = 25,
+    unread_only: bool = False,
+) -> dict:
+    """
+    Get messages from the student's mailbox.
+
+    Fetches messages from inbox, sent folder, or deleted items with optional filtering.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        folder: Which folder to read - 'inbox', 'sent', or 'deleted' (default: 'inbox')
+        limit: Maximum number of messages to return (default: 25)
+        unread_only: If True, only return unread messages (default: False)
+
+    Returns:
+        Messages list with:
+        - Message ID, subject, sender information
+        - Sent date and read status
+        - Priority and attachment indicators
+        - Total count of messages returned
+    """
+    async with MagisterAsyncService(school_code) as service:
+        messages = await service.get_messages(
+            folder=folder,
+            limit=limit,
+            unread_only=unread_only,
+        )
+
+        return {
+            "success": True,
+            "messages": messages,
+            "folder": folder,
+            "count": len(messages),
+            "unread_only": unread_only,
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def read_message(
+    school_code: str,
+    message_id: int,
+) -> dict:
+    """
+    Read the full content of a specific message.
+
+    Retrieves complete message details including body text, recipients, and attachments.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        message_id: The ID of the message to read
+
+    Returns:
+        Full message with:
+        - Complete message body (HTML content)
+        - Sender and all recipient information
+        - List of attachments with names and sizes
+        - Message metadata (date, priority, read status)
+    """
+    async with MagisterAsyncService(school_code) as service:
+        message = await service.get_message(message_id)
+
+        return {
+            "success": True,
+            "message": message,
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_unread_count(
+    school_code: str,
+) -> dict:
+    """
+    Get the count of unread messages.
+
+    Quickly check how many unread messages are in the inbox without fetching full message list.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        Unread message count with:
+        - unread_count: Number of unread messages in inbox
+    """
+    async with MagisterAsyncService(school_code) as service:
+        count = await service.get_unread_message_count()
+
+        return {
+            "success": True,
+            "unread_count": count,
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def mark_message_read(
+    school_code: str,
+    message_id: int,
+) -> dict:
+    """
+    Mark a message as read.
+
+    Updates the read status of a message in the Magister system.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        message_id: The ID of the message to mark as read
+
+    Returns:
+        Success confirmation with:
+        - message_id: The ID of the message that was marked as read
+        - marked_read: True if operation succeeded
+    """
+    async with MagisterAsyncService(school_code) as service:
+        await service.mark_message_as_read(message_id)
+
+        return {
+            "success": True,
+            "message_id": message_id,
+            "marked_read": True,
+        }
+
+
+@mcp.tool()
 async def check_auth_status(
     school_code: str,
 ) -> dict:

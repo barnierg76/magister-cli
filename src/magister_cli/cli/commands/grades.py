@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from magister_cli.api import MagisterAPIError, MagisterClient, TokenExpiredError
+from magister_cli.api import MagisterAPIError, MagisterClient, NotAuthenticatedError, TokenExpiredError
 from magister_cli.api.models import Cijfer
 from magister_cli.auth import get_current_token
 from magister_cli.cli.errors import format_error
@@ -33,7 +33,7 @@ def _get_client(school: str | None) -> tuple[MagisterClient, str]:
 
     token_data = get_current_token(school_code)
     if token_data is None:
-        format_no_auth_error(console, school_code)
+        format_error(NotAuthenticatedError(school_code), console, school=school_code)
         raise typer.Exit(1)
 
     return MagisterClient(token_data.school, token_data.access_token), school_code
@@ -140,11 +140,11 @@ def recent_grades(
 
             console.print(table)
 
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
+    except TokenExpiredError as e:
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
     except MagisterAPIError as e:
-        format_api_error(console, e)
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
 
 
@@ -209,11 +209,11 @@ def grades_overview(
             console.print()
             console.print(f"[green]{passing} voldoende[/green] | [red]{failing} onvoldoende[/red]")
 
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
+    except TokenExpiredError as e:
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
     except MagisterAPIError as e:
-        format_api_error(console, e)
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
 
 
@@ -281,11 +281,11 @@ def grades_by_subject(
                 console.print(table)
                 console.print()
 
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
+    except TokenExpiredError as e:
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
     except MagisterAPIError as e:
-        format_api_error(console, e)
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
 
 
@@ -325,11 +325,11 @@ def list_subjects(
 
             console.print(table)
 
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
+    except TokenExpiredError as e:
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
     except MagisterAPIError as e:
-        format_api_error(console, e)
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
 
 
@@ -379,11 +379,11 @@ def list_enrollments(
 
             console.print(table)
 
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
+    except TokenExpiredError as e:
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
     except MagisterAPIError as e:
-        format_api_error(console, e)
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
 
 

@@ -7,29 +7,11 @@ import httpx
 from magister_cli.api.base import BaseResource
 from magister_cli.api.exceptions import MagisterAPIError
 from magister_cli.api.models import Bijlage
+from magister_cli.utils.files import sanitize_filename
 
 
 class AttachmentsResource(BaseResource):
     """Resource for attachment downloads."""
-
-    @staticmethod
-    def _sanitize_filename(filename: str) -> str:
-        """Sanitize filename to prevent path traversal.
-
-        Args:
-            filename: The filename to sanitize
-
-        Returns:
-            Safe filename with dangerous characters removed
-        """
-        # Remove path separators and parent directory references
-        safe_name = filename.replace("/", "_").replace("\\", "_").replace("..", "_")
-        # Remove null bytes and other control characters
-        safe_name = "".join(c for c in safe_name if c.isprintable())
-        # Limit length
-        if len(safe_name) > 255:
-            safe_name = safe_name[:255]
-        return safe_name or "unnamed_file"
 
     def __init__(
         self,
@@ -96,7 +78,7 @@ class AttachmentsResource(BaseResource):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Sanitize filename to prevent path traversal
-        safe_filename = self._sanitize_filename(bijlage.naam)
+        safe_filename = sanitize_filename(bijlage.naam)
         output_path = (output_dir / safe_filename).resolve()
 
         # Validate path is within output_dir (prevent path traversal)

@@ -1,6 +1,7 @@
 """Token storage and management using keyring for secure storage."""
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Self
@@ -8,6 +9,8 @@ from typing import Self
 import keyring
 
 from magister_cli.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "magister-cli"
 
@@ -21,6 +24,22 @@ class TokenData:
     person_id: int | None = None
     person_name: str | None = None
     expires_at: datetime | None = None
+
+    def __repr__(self) -> str:
+        """Return string representation with redacted token."""
+        return (
+            f"TokenData("
+            f"school={self.school!r}, "
+            f"person_id={self.person_id}, "
+            f"person_name={self.person_name!r}, "
+            f"expires_at={self.expires_at!r}, "
+            f"access_token='***REDACTED***'"
+            f")"
+        )
+
+    def __str__(self) -> str:
+        """Return human-readable string with redacted token."""
+        return f"TokenData for {self.person_name} at {self.school} (expires: {self.expires_at})"
 
     def is_expired(self) -> bool:
         """Check if token is expired or will expire soon (5 min buffer)."""
@@ -79,15 +98,27 @@ class TokenManager:
         keyring.set_password(SERVICE_NAME, key, data_json)
 
     def get_token(self) -> TokenData | None:
-        """Retrieve stored token from keyring."""
+        """Retrieve stored token from keyring.
+
+        If the stored token is corrupted, it will be automatically cleared
+        and None will be returned (forcing re-authentication).
+        """
         key = self._get_keyring_key()
         data_json = keyring.get_password(SERVICE_NAME, key)
         if not data_json:
             return None
+
         try:
             data = json.loads(data_json)
             return TokenData.from_dict(data)
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            # Corrupted token - auto-clear and log warning
+            school = self.school or "default"
+            logger.warning(f"Corrupted token in keyring for {school}: {e}. Clearing...")
+            try:
+                keyring.delete_password(SERVICE_NAME, key)
+            except Exception as delete_error:
+                logger.error(f"Failed to clear corrupted token: {delete_error}")
             return None
 
     def delete_token(self) -> bool:
