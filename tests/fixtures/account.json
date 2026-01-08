@@ -1,0 +1,8 @@
+{
+  "Persoon": {
+    "Id": 12345,
+    "Voornaam": "Jan",
+    "Achternaam": "Jansen",
+    "Tussenvoegsel": null
+  }
+}

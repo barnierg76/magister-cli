@@ -1,0 +1,70 @@
+"""Configuration management using Pydantic Settings."""
+
+from pathlib import Path
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MAGISTER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    school: str | None = Field(
+        default=None,
+        description="School code (e.g., vsvonh)",
+    )
+    username: str | None = Field(default=None, description="Username for auto-login hint")
+    timeout: int = Field(default=30, ge=5, le=120, description="HTTP timeout in seconds")
+    headless: bool = Field(default=True, description="Run browser in headless mode")
+    cache_dir: Path = Field(
+        default=Path.home() / ".config" / "magister-cli",
+        description="Cache directory for tokens and config",
+    )
+    oauth_callback_port: int = Field(
+        default=8080,
+        ge=1024,
+        le=65535,
+        description="Port for OAuth callback server",
+    )
+    oauth_timeout: int = Field(
+        default=300,
+        ge=30,
+        le=600,
+        description="Timeout for OAuth flow in seconds",
+    )
+
+    @field_validator("cache_dir", mode="after")
+    @classmethod
+    def ensure_cache_dir_exists(cls, v: Path) -> Path:
+        """Create cache directory if it doesn't exist."""
+        v.mkdir(parents=True, exist_ok=True)
+        return v
+
+    @property
+    def token_file(self) -> Path:
+        """Path to the token cache file."""
+        return self.cache_dir / "token.json"
+
+
+# Global settings instance
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    """Get or create the global settings instance."""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+def reset_settings() -> None:
+    """Reset settings (useful for testing)."""
+    global _settings
+    _settings = None

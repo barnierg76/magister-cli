@@ -1,0 +1,124 @@
+{
+  "Items": [
+    {
+      "Id": 1001,
+      "Start": "2026-01-09T09:00:00",
+      "Einde": "2026-01-09T09:50:00",
+      "Omschrijving": "Wiskunde",
+      "Inhoud": "Maak opgaven 4.1 t/m 4.15",
+      "Huiswerk": null,
+      "InfoType": 1,
+      "Status": 0,
+      "Vakken": [
+        {
+          "Id": 101,
+          "Naam": "Wiskunde",
+          "Afkorting": "WIS"
+        }
+      ],
+      "Lokalen": [
+        {
+          "Naam": "B102"
+        }
+      ],
+      "Docenten": [
+        {
+          "Naam": "Dhr. De Vries",
+          "Afkorting": "VRI"
+        }
+      ],
+      "LesuurVan": 2,
+      "Afgerond": false,
+      "Toets": false
+    },
+    {
+      "Id": 1002,
+      "Start": "2026-01-09T11:00:00",
+      "Einde": "2026-01-09T11:50:00",
+      "Omschrijving": "Nederlands",
+      "Inhoud": "Lees hoofdstuk 3, beantwoord vragen",
+      "Huiswerk": null,
+      "InfoType": 1,
+      "Status": 0,
+      "Vakken": [
+        {
+          "Id": 102,
+          "Naam": "Nederlands",
+          "Afkorting": "NE"
+        }
+      ],
+      "Lokalen": [
+        {
+          "Naam": "A201"
+        }
+      ],
+      "Docenten": [
+        {
+          "Naam": "Mw. Bakker",
+          "Afkorting": "BAK"
+        }
+      ],
+      "LesuurVan": 4,
+      "Afgerond": false,
+      "Toets": false
+    },
+    {
+      "Id": 1003,
+      "Start": "2026-01-10T10:00:00",
+      "Einde": "2026-01-10T10:50:00",
+      "Omschrijving": "Geschiedenis",
+      "Inhoud": "Toets over hoofdstuk 6-7: Tweede Wereldoorlog",
+      "Huiswerk": null,
+      "InfoType": 1,
+      "Status": 0,
+      "Vakken": [
+        {
+          "Id": 103,
+          "Naam": "Geschiedenis",
+          "Afkorting": "GS"
+        }
+      ],
+      "Lokalen": [
+        {
+          "Naam": "C301"
+        }
+      ],
+      "Docenten": [
+        {
+          "Naam": "Dhr. Peters",
+          "Afkorting": "PET"
+        }
+      ],
+      "LesuurVan": 3,
+      "Afgerond": false,
+      "Toets": true
+    },
+    {
+      "Id": 1004,
+      "Start": "2026-01-10T14:00:00",
+      "Einde": "2026-01-10T14:50:00",
+      "Omschrijving": "Engels",
+      "Inhoud": null,
+      "Huiswerk": null,
+      "InfoType": 1,
+      "Status": 0,
+      "Vakken": [
+        {
+          "Id": 104,
+          "Naam": "Engels",
+          "Afkorting": "EN"
+        }
+      ],
+      "Lokalen": [
+        {
+          "Naam": "B105"
+        }
+      ],
+      "Docenten": [],
+      "LesuurVan": 6,
+      "Afgerond": false,
+      "Toets": false
+    }
+  ],
+  "TotalCount": 4
+}

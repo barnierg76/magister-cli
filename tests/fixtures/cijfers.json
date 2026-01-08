@@ -1,0 +1,51 @@
+{
+  "Items": [
+    {
+      "CijferId": 5001,
+      "Vak": {
+        "Id": 101,
+        "Naam": "Wiskunde",
+        "Afkorting": "WIS"
+      },
+      "CijferStr": "7,5",
+      "Omschrijving": "Proefwerk H4",
+      "DatumIngevoerd": "2026-01-07T12:00:00",
+      "Weging": 2.0,
+      "IsVoldoende": true,
+      "Kolom": {
+        "Id": 1,
+        "Omschrijving": "SO H4",
+        "Weging": 2.0,
+        "IsGemiddelde": false
+      }
+    },
+    {
+      "CijferId": 5002,
+      "Vak": {
+        "Id": 102,
+        "Naam": "Nederlands",
+        "Afkorting": "NE"
+      },
+      "CijferStr": "6,8",
+      "Omschrijving": "Boekverslag",
+      "DatumIngevoerd": "2026-01-06T10:00:00",
+      "Weging": 1.5,
+      "IsVoldoende": true,
+      "Kolom": null
+    },
+    {
+      "CijferId": 5003,
+      "Vak": {
+        "Id": 103,
+        "Naam": "Geschiedenis",
+        "Afkorting": "GS"
+      },
+      "CijferStr": "5,2",
+      "Omschrijving": "Toets H5",
+      "DatumIngevoerd": "2026-01-05T14:00:00",
+      "Weging": 1.0,
+      "IsVoldoende": false,
+      "Kolom": null
+    }
+  ]
+}
