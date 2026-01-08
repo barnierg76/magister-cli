@@ -266,7 +266,7 @@ class MagisterCore:
 
         # Parse attachments
         attachments = []
-        for bijlage in api_data.get("Bijlagen", []):
+        for bijlage in api_data.get("Bijlagen") or []:
             attachments.append(AttachmentInfo(
                 id=bijlage.get("Id", 0),
                 name=bijlage.get("Naam", ""),
@@ -299,30 +299,34 @@ class MagisterCore:
     @staticmethod
     def parse_grade_from_api(api_data: dict) -> GradeInfo:
         """Parse grade from Magister API response."""
-        # Extract subject
-        vak = api_data.get("Vak", {})
+        # Extract subject (handle both PascalCase and camelCase)
+        vak = api_data.get("Vak") or api_data.get("vak") or {}
 
-        # Parse date
-        date_str = api_data.get("DatumIngevoerd", "")
+        # Parse date (handle both field names)
+        date_str = api_data.get("DatumIngevoerd") or api_data.get("ingevoerdOp") or ""
         try:
             grade_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         except (ValueError, AttributeError):
             grade_date = None
 
-        # Determine if sufficient (>= 5.5 for Dutch grades)
-        grade_value = api_data.get("CijferStr", "")
-        try:
-            numeric = float(grade_value.replace(",", "."))
-            is_sufficient = numeric >= 5.5
-        except (ValueError, AttributeError):
-            is_sufficient = True  # Assume sufficient if can't parse
+        # Get grade value (handle both field names)
+        grade_value = api_data.get("CijferStr") or api_data.get("waarde") or ""
+
+        # Check isVoldoende flag first, then calculate from grade
+        is_sufficient = api_data.get("isVoldoende")
+        if is_sufficient is None:
+            try:
+                numeric = float(grade_value.replace(",", "."))
+                is_sufficient = numeric >= 5.5
+            except (ValueError, AttributeError):
+                is_sufficient = True  # Assume sufficient if can't parse
 
         return GradeInfo(
-            subject=vak.get("Omschrijving", "Onbekend"),
+            subject=vak.get("Omschrijving") or vak.get("omschrijving") or "Onbekend",
             grade=grade_value,
-            weight=api_data.get("Weging"),
+            weight=api_data.get("Weging") or api_data.get("weegfactor"),
             date=grade_date,
-            description=api_data.get("KolomOmschrijving"),
+            description=api_data.get("KolomOmschrijving") or api_data.get("omschrijving"),
             is_sufficient=is_sufficient,
         )
 
@@ -355,7 +359,7 @@ class MagisterCore:
         return ScheduleItem(
             start=start,
             end=end,
-            subject=vak.get("Naam", "Onbekend"),
+            subject=vak.get("Naam") or api_data.get("Omschrijving") or "Onbekend",
             location=lokaal.get("Naam"),
             teacher=docent.get("Naam"),
             lesson_number=api_data.get("LesuurVan"),
