@@ -1,150 +1,834 @@
 # Magister CLI
 
-CLI tool voor het ophalen van data uit Magister (Nederlands leerlingvolgsysteem).
+A command-line tool for retrieving data from Magister, the Dutch student tracking system used by many schools in the Netherlands.
 
-## Installatie
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+  - [Authentication](#authentication)
+  - [Homework](#homework)
+  - [Tests](#tests)
+  - [Grades](#grades)
+  - [Schedule](#schedule)
+  - [Messages](#messages)
+  - [Download](#download)
+  - [Export](#export)
+  - [Notifications](#notifications)
+  - [Configuration](#configuration)
+  - [Shell Completion](#shell-completion)
+- [MCP Server (Claude Integration)](#mcp-server-claude-integration)
+- [Configuration Options](#configuration-options)
+- [Architecture](#architecture)
+- [Development](#development)
+
+## Installation
 
 ```bash
-# Clone de repository
+# Clone the repository
 git clone https://github.com/barnierg76/magister-cli.git
 cd magister-cli
 
-# Installeer met uv (aanbevolen)
+# Create virtual environment and install (recommended)
+uv venv
+source .venv/bin/activate
 uv pip install -e .
 
-# Of met pip
+# Or with pip
 pip install -e .
 
-# Installeer Playwright browser
+# Install Playwright browser for authentication
 playwright install chromium
 ```
 
-## Snelstart
+## Quick Start
 
 ```bash
-# Login bij je school
+# 1. Login to your school
 magister login --school vsvonh
 
-# Bekijk huiswerk voor de komende 7 dagen
+# 2. View homework for the next 7 days
 magister homework
 
-# Bekijk aankomende toetsen
+# 3. View upcoming tests
 magister tests --days 14
 
-# Bekijk rooster
+# 4. View today's schedule
 magister schedule today
+
+# 5. Check your recent grades
+magister grades recent
 ```
 
-## Commando's
+---
 
-### Authenticatie
+## Commands
+
+### Authentication
+
+Magister CLI uses browser-based OAuth authentication. Your token is securely stored in the system keychain.
+
+#### `magister login`
+
+Authenticate with Magister by opening a browser window.
 
 ```bash
-# Login via browser
 magister login --school <schoolcode>
-
-# Controleer status
-magister status
-
-# Uitloggen
-magister logout
 ```
 
-### Huiswerk
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code (e.g., `vsvonh`) |
+| `--headless/--no-headless` | | Run browser in headless mode |
+
+**Examples:**
+```bash
+magister login --school vsvonh
+magister login --school vsvonh --headless
+```
+
+#### `magister logout`
+
+Remove stored authentication token.
 
 ```bash
-# Huiswerk komende 7 dagen
+magister logout [--school <schoolcode>]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code |
+
+#### `magister status`
+
+Show current authentication status including session expiry time.
+
+```bash
+magister status [--school <schoolcode>]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code |
+
+---
+
+### Homework
+
+#### `magister homework`
+
+Show upcoming homework assignments.
+
+```bash
+magister homework [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days to look ahead | `7` |
+| `--subject` | `-s` | Filter by subject (partial match) | - |
+| `--school` | | School code | - |
+| `--completed` | `-c` | Include completed homework | `false` |
+| `--table` | `-t` | Show as table format | `false` |
+| `--download` | | Download all attachments | `false` |
+| `--output` | `-o` | Output directory for downloads | `./magister_bijlagen` |
+
+**Examples:**
+```bash
+# View homework for next 7 days
 magister homework
 
-# Huiswerk komende 14 dagen
+# View homework for next 14 days
 magister homework --days 14
 
-# Filter op vak
+# Filter by subject
 magister homework --subject wiskunde
 
-# Tabel weergave
+# Show in table format
 magister homework --table
 
-# Download bijlagen
+# Include completed homework
+magister homework --completed
+
+# Download attachments
 magister homework --download
 magister homework --download --output ./bijlagen
 ```
 
-### Toetsen
+---
+
+### Tests
+
+#### `magister tests`
+
+Show upcoming tests and exams.
 
 ```bash
-# Toetsen komende 14 dagen
+magister tests [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days to look ahead | `14` |
+| `--school` | | School code | - |
+
+**Examples:**
+```bash
+# View tests for next 14 days
 magister tests
 
-# Langere periode
+# View tests for next 30 days
 magister tests --days 30
 ```
 
-### Cijfers
+---
+
+### Grades
+
+The `grades` command group provides comprehensive access to your grades.
+
+#### `magister grades recent` / `magister grades list`
+
+Show recent grades.
 
 ```bash
-# Recente cijfers
+magister grades recent [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--top` | `-n` | Number of grades to show | `15` |
+| `--school` | `-s` | School code | - |
+| `--debug` | `-d` | Show debug information | `false` |
+
+**Examples:**
+```bash
 magister grades recent
-
-# Laatste 20 cijfers
-magister grades recent --limit 20
+magister grades recent --top 25
+magister grades list --debug
 ```
 
-### Rooster
+#### `magister grades overview`
+
+Show grade overview with averages per subject.
 
 ```bash
-# Vandaag
-magister schedule today
-
-# Morgen
-magister schedule tomorrow
-
-# Specifieke datum
-magister schedule date 2024-01-15
+magister grades overview [--school <schoolcode>]
 ```
 
-### Berichten
+**Output includes:**
+- Average grade per subject
+- Pass/fail status
+- Summary of passing vs failing subjects
+
+#### `magister grades subject`
+
+Show all grades for a specific subject.
 
 ```bash
-# Inbox bekijken
+magister grades subject <subject_name> [--school <schoolcode>]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `subject` | Subject name (partial match supported) |
+
+**Examples:**
+```bash
+magister grades subject wiskunde
+magister grades subject "ne"
+magister grades subject engels
+```
+
+#### `magister grades subjects`
+
+List all subjects.
+
+```bash
+magister grades subjects [--school <schoolcode>]
+```
+
+**Output includes:**
+- Subject name
+- Subject code
+- Main teacher
+
+#### `magister grades enrollments`
+
+Show all enrollments (school years).
+
+```bash
+magister grades enrollments [--school <schoolcode>]
+```
+
+#### `magister grades trends`
+
+Analyze grade trends over time.
+
+```bash
+magister grades trends [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--period` | `-p` | Analysis period in days | `90` |
+| `--school` | `-s` | School code | - |
+
+**Output includes:**
+- Current average per subject
+- Trend indicator (↑ improving, ↓ declining, → stable)
+- Number of grades
+- Min-Max range
+
+**Examples:**
+```bash
+magister grades trends
+magister grades trends --period 30
+magister grades trends --period 180
+```
+
+#### `magister grades stats`
+
+Show detailed grade statistics.
+
+```bash
+magister grades stats [--school <schoolcode>]
+```
+
+**Output includes:**
+- Average, median, standard deviation per subject
+- Highest and lowest grades
+- Total grade count
+
+#### `magister grades raw`
+
+Debug command showing raw API response.
+
+```bash
+magister grades raw [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--school` | `-s` | School code | - |
+| `--limit` | `-n` | Number of grades | `10` |
+
+---
+
+### Schedule
+
+The `schedule` command group shows your class timetable.
+
+#### `magister schedule today` / `magister schedule dag`
+
+Show today's schedule.
+
+```bash
+magister schedule today [--school <schoolcode>]
+```
+
+#### `magister schedule tomorrow` / `magister schedule morgen`
+
+Show tomorrow's schedule.
+
+```bash
+magister schedule tomorrow [--school <schoolcode>]
+```
+
+#### `magister schedule week`
+
+Show this week's schedule.
+
+```bash
+magister schedule week [--school <schoolcode>]
+```
+
+#### `magister schedule date`
+
+Show schedule for a specific date.
+
+```bash
+magister schedule date <date> [--school <schoolcode>]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `date` | Date in format `DD-MM-YYYY` or `DD-MM` |
+
+**Examples:**
+```bash
+magister schedule date 15-01-2026
+magister schedule date 15-01
+```
+
+#### `magister schedule changes`
+
+Show only schedule changes (cancellations and modifications).
+
+```bash
+magister schedule changes [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days ahead | `7` |
+| `--school` | `-s` | School code | - |
+
+**Examples:**
+```bash
+magister schedule changes
+magister schedule changes --days 14
+```
+
+---
+
+### Messages
+
+The `messages` command group manages your Magister inbox.
+
+#### `magister messages inbox` / `magister messages list`
+
+Show inbox messages.
+
+```bash
+magister messages inbox [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--top` | `-n` | Number of messages to show | `25` |
+| `--unread` | `-u` | Show only unread messages | `false` |
+| `--school` | `-s` | School code | - |
+
+**Examples:**
+```bash
 magister messages inbox
+magister messages inbox --unread
+magister messages inbox --top 50
 ```
 
-### Bijlagen downloaden
+#### `magister messages sent`
+
+Show sent messages.
 
 ```bash
-# Download alle bijlagen van huiswerk
+magister messages sent [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--top` | `-n` | Number of messages to show | `25` |
+| `--school` | `-s` | School code | - |
+
+#### `magister messages read`
+
+Read a specific message.
+
+```bash
+magister messages read <message_id> [OPTIONS]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `message_id` | Message ID |
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--mark-read/--no-mark-read` | Mark message as read | `true` |
+| `--school` | School code | - |
+
+**Examples:**
+```bash
+magister messages read 12345
+magister messages read 12345 --no-mark-read
+```
+
+#### `magister messages mark-read`
+
+Mark a message as read.
+
+```bash
+magister messages mark-read <message_id> [--school <schoolcode>]
+```
+
+#### `magister messages delete`
+
+Delete a message.
+
+```bash
+magister messages delete <message_id> [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--force` | `-f` | Skip confirmation prompt | `false` |
+| `--school` | `-s` | School code | - |
+
+**Examples:**
+```bash
+magister messages delete 12345
+magister messages delete 12345 --force
+```
+
+#### `magister messages count`
+
+Show number of unread messages.
+
+```bash
+magister messages count [--school <schoolcode>]
+```
+
+---
+
+### Download
+
+#### `magister download`
+
+Download all homework attachments.
+
+```bash
+magister download [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days to look ahead | `7` |
+| `--subject` | `-s` | Filter by subject (partial match) | - |
+| `--output` | `-o` | Output directory | `./magister_bijlagen` |
+| `--school` | | School code | - |
+
+Attachments are organized in subdirectories by subject.
+
+**Examples:**
+```bash
+# Download all attachments
 magister download
 
-# Filter op vak
+# Download for next 14 days
+magister download --days 14
+
+# Filter by subject
 magister download --subject engels
 
-# Aangepaste output directory
+# Custom output directory
 magister download --output ./studiematerialen
 ```
 
-## Shell Completion
+---
 
-Magister CLI ondersteunt shell completion voor bash, zsh, en fish.
+### Export
+
+The `export` command group exports data to iCal format for use with calendar apps.
+
+#### `magister export schedule`
+
+Export schedule to iCal format.
 
 ```bash
-# Bash
+magister export schedule [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days to export | `14` |
+| `--output` | `-o` | Output file (.ics) | `./magister_rooster.ics` |
+| `--school` | | School code | - |
+
+**Compatible with:**
+- Google Calendar
+- Apple Calendar
+- Microsoft Outlook
+- Other iCal-compatible apps
+
+**Examples:**
+```bash
+magister export schedule
+magister export schedule --days 30 --output rooster.ics
+```
+
+#### `magister export homework`
+
+Export homework to iCal format (as all-day events on deadline dates).
+
+```bash
+magister export homework [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days ahead | `14` |
+| `--output` | `-o` | Output file (.ics) | `./magister_huiswerk.ics` |
+| `--school` | | School code | - |
+| `--completed` | `-c` | Include completed homework | `false` |
+
+**Examples:**
+```bash
+magister export homework
+magister export homework --days 30 --output huiswerk.ics
+```
+
+#### `magister export all`
+
+Export both schedule and homework to iCal files.
+
+```bash
+magister export all [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--days` | `-d` | Number of days ahead | `14` |
+| `--output` | `-o` | Output directory | Current directory |
+| `--school` | | School code | - |
+
+Creates two files:
+- `magister_rooster.ics`
+- `magister_huiswerk.ics`
+
+**Examples:**
+```bash
+magister export all
+magister export all --days 30 --output ./exports
+```
+
+---
+
+### Notifications
+
+The `notify` command group manages desktop notifications for Magister changes.
+
+#### `magister notify setup`
+
+Interactive setup wizard for notifications.
+
+```bash
+magister notify setup [--school <schoolcode>]
+```
+
+Steps through:
+1. Testing desktop notifications
+2. Initializing baseline data
+3. Instructions for automation
+
+#### `magister notify check`
+
+Check for changes and send notifications.
+
+```bash
+magister notify check [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--school` | | School code | - |
+| `--quiet` | `-q` | Only show changes, no notifications | `false` |
+
+On first run, saves current state as baseline. Subsequent runs detect and notify about:
+- New grades
+- Schedule changes (cancellations, modifications)
+- Upcoming homework deadlines
+
+**Examples:**
+```bash
+magister notify check
+magister notify check --quiet
+```
+
+#### `magister notify test`
+
+Send a test notification.
+
+```bash
+magister notify test [--school <schoolcode>]
+```
+
+#### `magister notify status`
+
+Show notification status and configuration.
+
+```bash
+magister notify status [--school <schoolcode>]
+```
+
+**Shows:**
+- Initialization status
+- Last check time
+- Enabled notification types
+- Quiet hours
+- Tracked items count
+
+#### `magister notify reset`
+
+Reset notification state (triggers re-initialization).
+
+```bash
+magister notify reset [OPTIONS]
+```
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--force` | `-f` | Skip confirmation prompt | `false` |
+| `--school` | | School code | - |
+
+**Automation with cron:**
+```bash
+# Check every 30 minutes
+*/30 * * * * cd /path/to/magister-cli && source .venv/bin/activate && magister notify check --quiet
+```
+
+**Default Configuration:**
+- Quiet hours: 22:00 - 07:00 (no notifications)
+- Homework reminder: 24 hours before deadline
+- All notification types enabled (grades, schedule, homework)
+
+---
+
+### Configuration
+
+The `config` command group manages CLI settings.
+
+#### `magister config show`
+
+Show all configuration settings.
+
+```bash
+magister config show
+```
+
+**Displays:**
+- Current value for each setting
+- Source (config file, environment variable, or default)
+- Description
+
+#### `magister config set`
+
+Set a configuration value.
+
+```bash
+magister config set <key> <value>
+```
+
+**Available settings:**
+
+| Key | Type | Description | Example |
+|-----|------|-------------|---------|
+| `school` | string | Default school code | `vsvonh` |
+| `username` | string | Username hint for login | `jan.jansen` |
+| `timeout` | int | HTTP timeout in seconds (5-120) | `30` |
+| `headless` | bool | Run browser in headless mode | `true` |
+| `oauth_callback_port` | int | Port for OAuth callback (1024-65535) | `8080` |
+| `oauth_timeout` | int | OAuth flow timeout in seconds (30-600) | `300` |
+
+**Examples:**
+```bash
+magister config set school vsvonh
+magister config set timeout 60
+magister config set headless false
+```
+
+#### `magister config get`
+
+Get a specific configuration value.
+
+```bash
+magister config get <key>
+```
+
+**Examples:**
+```bash
+magister config get school
+```
+
+#### `magister config reset`
+
+Reset all configuration to defaults.
+
+```bash
+magister config reset [--force]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--force` | `-f` | Skip confirmation prompt |
+
+#### `magister config edit`
+
+Open configuration file in default editor.
+
+```bash
+magister config edit
+```
+
+#### `magister config path`
+
+Show path to configuration file.
+
+```bash
+magister config path
+```
+
+**Config file location:** `~/.config/magister-cli/config.yaml`
+
+---
+
+### Shell Completion
+
+The `completion` command group manages shell autocompletion.
+
+#### `magister completion install`
+
+Install shell completion.
+
+```bash
+magister completion install [--shell <shell>]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--shell` | `-s` | Shell type: `bash`, `zsh`, or `fish` |
+
+Auto-detects shell if not specified.
+
+**Examples:**
+```bash
+magister completion install
+magister completion install --shell zsh
+```
+
+#### `magister completion show`
+
+Show completion script for your shell.
+
+```bash
+magister completion show [--shell <shell>]
+```
+
+#### `magister completion status`
+
+Show shell completion status.
+
+```bash
+magister completion status
+```
+
+**Alternative method:**
+```bash
+# Use Typer's built-in completion
 magister --install-completion bash
-
-# Zsh
 magister --install-completion zsh
-
-# Fish
 magister --install-completion fish
 ```
 
-## MCP Server (Claude Integratie)
+---
 
-Magister CLI bevat een MCP (Model Context Protocol) server waarmee Claude en andere AI agents direct toegang hebben tot Magister data.
+## MCP Server (Claude Integration)
 
-### Configuratie in Claude Desktop
+Magister CLI includes an MCP (Model Context Protocol) server that allows Claude and other AI agents to access Magister data directly.
 
-Voeg toe aan je Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+### Configuration in Claude Desktop
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
@@ -156,55 +840,88 @@ Voeg toe aan je Claude Desktop config (`~/Library/Application Support/Claude/cla
 }
 ```
 
-### MCP Tools
+### Available MCP Tools
 
-De MCP server biedt de volgende tools:
+| Tool | Description |
+|------|-------------|
+| `get_student_summary` | Complete daily overview (homework, grades, schedule) |
+| `get_homework` | Retrieve homework with filters |
+| `get_upcoming_tests` | Upcoming tests |
+| `get_recent_grades` | Recent grades with average |
+| `get_today_schedule` | Today's schedule |
+| `download_homework_materials` | Download homework attachments |
 
-| Tool | Beschrijving |
-|------|--------------|
-| `get_student_summary` | Compleet dagelijks overzicht (huiswerk, cijfers, rooster) |
-| `get_homework` | Huiswerk ophalen met filters |
-| `get_upcoming_tests` | Aankomende toetsen |
-| `get_recent_grades` | Recente cijfers met gemiddelde |
-| `get_today_schedule` | Rooster van vandaag |
-| `download_homework_materials` | Download huiswerk bijlagen |
+### Example Claude Prompts
 
-### Voorbeeld Claude prompts
+- "What homework do I have today?"
+- "What tests do I have in the next 2 weeks?"
+- "How are my grades looking?"
+- "Download all attachments for math"
 
-- "Wat heb ik vandaag voor huiswerk?"
-- "Welke toetsen heb ik de komende 2 weken?"
-- "Hoe staat mijn gemiddelde ervoor?"
-- "Download alle bijlagen voor wiskunde"
+---
 
-## Configuratie
+## Configuration Options
 
 ### Environment Variables
 
 ```bash
-# School code (optioneel, kan ook via --school flag)
+# School code (optional, can use --school flag instead)
 export MAGISTER_SCHOOL=vsvonh
 
-# OAuth timeout in seconden (default: 120)
+# OAuth timeout in seconds (default: 120)
 export MAGISTER_OAUTH_TIMEOUT=180
 
 # Headless browser mode (default: false)
 export MAGISTER_HEADLESS=true
 ```
 
-### Config Bestand
+### Config File
 
-Config bestand: `~/.config/magister-cli/config.yaml`
+Location: `~/.config/magister-cli/config.yaml`
 
 ```yaml
 school: vsvonh
 headless: false
+timeout: 30
 oauth_timeout: 120
 ```
+
+---
+
+## Architecture
+
+```
+magister-cli/
+├── src/magister_cli/
+│   ├── api/              # Magister API client
+│   ├── auth/             # OAuth authentication
+│   ├── cli/              # CLI commands and formatters
+│   │   ├── commands/     # Typer subcommands
+│   │   ├── formatters.py # Rich output formatting
+│   │   └── progress.py   # Progress indicators
+│   ├── mcp/              # MCP server for Claude
+│   │   └── server.py     # FastMCP tools
+│   ├── services/         # Business logic
+│   │   ├── core.py       # I/O agnostic domain objects
+│   │   ├── async_magister.py  # Async service
+│   │   └── sync_magister.py   # Sync wrapper
+│   └── config.py         # Settings
+└── tests/
+```
+
+### Design Principles
+
+- **Async-first**: Primary implementation is async for parallel API calls
+- **I/O agnostic core**: Business logic separated from I/O
+- **MCP-ready**: All CLI functionality available as MCP tools
+- **Rich progress**: Clear feedback via spinners and progress bars
+
+---
 
 ## Development
 
 ```bash
-# Installeer dev dependencies
+# Install dev dependencies
 uv pip install -e ".[dev]"
 
 # Run tests
@@ -214,42 +931,16 @@ pytest
 ruff check .
 ruff format .
 
-# MCP server testen
+# Test MCP server
 mcp dev magister_cli/mcp/server.py
 ```
 
-## Architectuur
+---
 
-```
-magister-cli/
-   src/magister_cli/
-      api/              # Magister API client
-      auth/             # OAuth authenticatie
-      cli/              # CLI commands en formatters
-         commands/      # Typer subcommands
-         formatters.py  # Rich output formatting
-         progress.py    # Progress indicators
-      mcp/              # MCP server voor Claude
-         server.py      # FastMCP tools
-      services/         # Business logic
-         core.py        # I/O agnostic domain objects
-         async_magister.py  # Async service
-         sync_magister.py   # Sync wrapper
-      config.py         # Settings
-   tests/
-```
-
-### Design Principles
-
-- **Async-first**: Primaire implementatie is async voor parallelle API calls
-- **I/O agnostic core**: Business logic gescheiden van I/O
-- **MCP-ready**: Alle CLI functionaliteit beschikbaar als MCP tools
-- **Rich progress**: Duidelijke feedback via spinners en progress bars
-
-## Licentie
+## License
 
 MIT
 
-## Bijdragen
+## Contributing
 
-Pull requests welkom! Zorg ervoor dat tests slagen en code geformateerd is met ruff.
+Pull requests welcome! Please ensure tests pass and code is formatted with ruff.

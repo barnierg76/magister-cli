@@ -17,3 +17,25 @@ wheels/
 
 # Downloaded attachments
 magister_bijlagen/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Development artifacts
+plans/
+todos/
+LEARNINGS.md
+EXAMPLES_AND_PATTERNS.md
+PREVENTION_*.md
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Exported files
+*.ics
