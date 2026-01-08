@@ -318,10 +318,15 @@ def list_subjects(
                 header_style="bold",
             )
             table.add_column("Vak", width=30)
-            table.add_column("Afkorting", width=10)
+            table.add_column("Code", width=10)
+            table.add_column("Docent", width=30)
 
-            for subject in sorted(subjects, key=lambda s: s.naam):
-                table.add_row(subject.naam, subject.afkorting or "-")
+            for subject in sorted(subjects, key=lambda s: s.vak_naam):
+                table.add_row(
+                    subject.vak_naam,
+                    subject.vak_code or "-",
+                    subject.hoofd_docent or "-",
+                )
 
             console.print(table)
 

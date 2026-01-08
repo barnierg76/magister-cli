@@ -11,22 +11,22 @@ from magister_cli.api.models.base import MagisterModel
 class Afzender(MagisterModel):
     """Message sender or recipient."""
 
-    id: int = Field(alias="Id")
-    naam: str = Field(alias="Naam")
-    type: str | None = Field(default=None, alias="Type")  # Docent, Leerling, etc.
+    id: int = Field(alias="id")
+    naam: str = Field(alias="naam")
+    type: str | None = Field(default=None, alias="type")  # Docent, Leerling, etc.
 
 
 class Bericht(MagisterModel):
     """Message summary (inbox/sent view)."""
 
-    id: int = Field(alias="Id")
-    onderwerp: str = Field(alias="Onderwerp")
-    afzender: Afzender = Field(alias="Afzender")
-    verzonden_op: datetime = Field(alias="VerzondOp")
-    gelezen: bool = Field(alias="IsGelezen")
-    heeft_bijlagen: bool = Field(default=False, alias="HeeftBijlagen")
-    prioriteit: str | None = Field(default=None, alias="Prioriteit")  # Normaal, Hoog
-    heeft_prioriteit: bool = Field(default=False, alias="HeeftPrioriteit")
+    id: int = Field(alias="id")
+    onderwerp: str = Field(alias="onderwerp")
+    afzender: Afzender = Field(alias="afzender")
+    verzonden_op: datetime = Field(alias="verzondenOp")
+    gelezen: bool = Field(alias="isGelezen")
+    heeft_bijlagen: bool = Field(default=False, alias="heeftBijlagen")
+    prioriteit: str | None = Field(default=None, alias="prioriteit")  # Normaal, Hoog
+    heeft_prioriteit: bool = Field(default=False, alias="heeftPrioriteit")
 
     @property
     def is_unread(self) -> bool:
@@ -42,10 +42,10 @@ class Bericht(MagisterModel):
 class BerichtDetail(Bericht):
     """Full message with body and attachments."""
 
-    inhoud: str = Field(alias="Inhoud")
-    ontvangers: list[Afzender] = Field(default_factory=list, alias="Ontvangers")
-    bijlagen: list[Bijlage] = Field(default_factory=list, alias="Bijlagen")
-    cc_ontvangers: list[Afzender] = Field(default_factory=list, alias="CCOntvangers")
+    inhoud: str = Field(alias="inhoud")
+    ontvangers: list[Afzender] = Field(default_factory=list, alias="ontvangers")
+    bijlagen: list[Bijlage] = Field(default_factory=list, alias="bijlagen")
+    cc_ontvangers: list[Afzender] = Field(default_factory=list, alias="ccOntvangers")
 
     @property
     def recipient_names(self) -> list[str]:
@@ -56,5 +56,5 @@ class BerichtDetail(Bericht):
 class BerichtenResponse(MagisterModel):
     """Response wrapper for messages list."""
 
-    items: list[Bericht] = Field(alias="Items")
-    total_count: int = Field(default=0, alias="TotalCount")
+    items: list[Bericht] = Field(alias="items")
+    total_count: int = Field(default=0, alias="totalCount")

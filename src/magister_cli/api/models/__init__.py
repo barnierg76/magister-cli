@@ -23,7 +23,10 @@ from magister_cli.api.models.enrollments import (
     CijferPeriodeOverzicht,
     Periode,
     Studie,
+    StudieVak,
     VakCijferOverzicht,
+    VakDocent,
+    VakInschrijving,
 )
 from magister_cli.api.models.messages import (
     Afzender,
@@ -60,7 +63,10 @@ __all__ = [
     "CijferPeriodeOverzicht",
     "Periode",
     "Studie",
+    "StudieVak",
     "VakCijferOverzicht",
+    "VakDocent",
+    "VakInschrijving",
     # Messages
     "Afzender",
     "Bericht",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from magister_cli.api.base import BaseResource
-from magister_cli.api.models import Aanmelding, Cijfer, Vak
+from magister_cli.api.models import Aanmelding, Cijfer, VakInschrijving
 
 logger = logging.getLogger(__name__)
 
@@ -88,39 +88,60 @@ class GradesResource(BaseResource):
                 return []
             enrollment_id = enrollment.id
 
-        data = self._get(
-            f"/aanmeldingen/{enrollment_id}/cijfers/cijferoverzichtvooraanmelding",
-            params={"actievePerioden": "false", "alleenBerewordeeldePeriwordes": "false"},
-        )
-
-        # The response contains a complex structure with grades per subject per period
-        # We flatten it to a simple list of grades
-        grades = []
+        # Get the grades from the correct endpoint
+        data = self._get(f"/aanmeldingen/{enrollment_id}/cijfers")
         items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else []
 
+        if not items:
+            return []
+
+        # Get subjects to map studievakId to vak info
+        subjects = self.subjects(enrollment_id)
+        vak_map: dict[int, dict] = {}
+        for subject in subjects:
+            vak_map[subject.studievak.id] = {
+                "code": subject.vak_code,
+                "omschrijving": subject.vak_naam,
+            }
+
+        # Parse grades and add vak info
+        grades = []
         for item in items:
-            # Each item is a subject with its grades
-            cijfer_list = item.get("cijferKolommen", item.get("CijferKolommen", []))
-            for kolom in cijfer_list:
-                cijfer_items = kolom.get("cijfers", kolom.get("Cijfers", []))
-                for cijfer_data in cijfer_items:
-                    try:
-                        cijfer = Cijfer.model_validate(cijfer_data)
-                        grades.append(cijfer)
-                    except Exception:
-                        # Skip invalid grade data
-                        continue
+            try:
+                kolom = item.get("kolom", {})
+                studievak_id = kolom.get("studievakId")
+                vak_info = vak_map.get(studievak_id, {"code": "?", "omschrijving": "Onbekend"})
+
+                # Build grade data in the format expected by Cijfer model
+                grade_data = {
+                    "kolomId": kolom.get("id"),
+                    "vak": vak_info,
+                    "waarde": item.get("waarde", ""),
+                    "omschrijving": kolom.get("omschrijving", ""),
+                    "ingevoerdOp": item.get("ingevoerdOp"),
+                    "weegfactor": kolom.get("weegfactor"),
+                    "isVoldoende": item.get("isVoldoende"),
+                    "teltMee": item.get("teltMee", True),
+                    "moetInhalen": item.get("moetInhalen", False),
+                    "heeftVrijstelling": item.get("heeftVrijstelling", False),
+                }
+
+                grade = Cijfer.model_validate(grade_data)
+                grades.append(grade)
+            except Exception as e:
+                logger.debug(f"Failed to parse grade: {e}")
+                continue
 
         return grades
 
-    def subjects(self, enrollment_id: int | None = None) -> list[Vak]:
+    def subjects(self, enrollment_id: int | None = None) -> list[VakInschrijving]:
         """Get subjects for an enrollment.
 
         Args:
             enrollment_id: The enrollment ID. If None, uses current enrollment.
 
         Returns:
-            List of subjects for the enrollment
+            List of subject enrollments for the student
         """
         if enrollment_id is None:
             enrollment = self.current_enrollment()
@@ -130,7 +151,7 @@ class GradesResource(BaseResource):
 
         data = self._get(f"/aanmeldingen/{enrollment_id}/vakken")
         items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
-        return [Vak.model_validate(item) for item in items]
+        return [VakInschrijving.model_validate(item) for item in items]
 
     def by_subject(
         self,

@@ -134,3 +134,79 @@ class AanmeldingenResponse(MagisterModel):
     """Response wrapper for enrollments list."""
 
     items: list[Aanmelding] = Field(default_factory=list, alias="Items")
+
+
+class StudieVak(MagisterModel):
+    """Subject/course in a study program (from /vakken endpoint)."""
+
+    id: int = Field(alias="id")
+    code: str = Field(alias="code")
+    omschrijving: str = Field(alias="omschrijving")
+    niveau: str | None = Field(default=None, alias="niveau")
+    volgnummer: int | None = Field(default=None, alias="volgnummer")
+    heeft_cijferstructuur: bool = Field(default=True, alias="heeftCijferstructuur")
+
+    @property
+    def naam(self) -> str:
+        """Get the subject name."""
+        return self.omschrijving
+
+    @property
+    def afkorting(self) -> str:
+        """Get the subject code/abbreviation."""
+        return self.code
+
+
+class VakDocent(MagisterModel):
+    """Teacher assigned to a subject."""
+
+    is_hoofd_docent: bool = Field(default=False, alias="isHoofdDocent")
+    code: str = Field(alias="code")
+    voorletters: str | None = Field(default=None, alias="voorletters")
+    tussenvoegsel: str | None = Field(default=None, alias="tussenvoegsel")
+    achternaam: str = Field(alias="achternaam")
+
+    @property
+    def naam(self) -> str:
+        """Get the full name."""
+        parts = []
+        if self.voorletters:
+            parts.append(self.voorletters)
+        if self.tussenvoegsel:
+            parts.append(self.tussenvoegsel)
+        parts.append(self.achternaam)
+        return " ".join(parts)
+
+
+class VakInschrijving(MagisterModel):
+    """Subject enrollment (student registered for a subject in an academic year)."""
+
+    id: int = Field(alias="id")
+    begin: date = Field(alias="begin")
+    einde: date = Field(alias="einde")
+    studievak: StudieVak = Field(alias="studievak")
+    docenten: list[VakDocent] | None = Field(default=None, alias="docenten")
+    heeft_ontheffing: bool = Field(default=False, alias="heeftOntheffing")
+    heeft_vrijstelling: bool = Field(default=False, alias="heeftVrijstelling")
+    is_roostertechnisch: bool = Field(default=False, alias="isRoostertechnisch")
+
+    @property
+    def vak_naam(self) -> str:
+        """Get the subject name."""
+        return self.studievak.naam
+
+    @property
+    def vak_code(self) -> str:
+        """Get the subject code."""
+        return self.studievak.code
+
+    @property
+    def hoofd_docent(self) -> str | None:
+        """Get the main teacher name."""
+        if self.docenten:
+            for docent in self.docenten:
+                if docent.is_hoofd_docent:
+                    return docent.naam
+            # Fallback to first docent if no main docent
+            return self.docenten[0].naam if self.docenten else None
+        return None
