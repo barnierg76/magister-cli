@@ -1,7 +1,7 @@
 """Grades CLI commands."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from statistics import mean, median, stdev
 from typing import Annotated
 
@@ -463,7 +463,7 @@ def _calculate_trend(grades: list[Cijfer], period_days: int = 30) -> str:
         return "→"  # Not enough data
 
     # Split grades into recent and older
-    cutoff = datetime.now() - timedelta(days=period_days // 2)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=period_days // 2)
 
     recent = [g.cijfer_numeriek for g in grades if g.datum_ingevoerd >= cutoff and g.cijfer_numeriek]
     older = [g.cijfer_numeriek for g in grades if g.datum_ingevoerd < cutoff and g.cijfer_numeriek]
@@ -521,7 +521,7 @@ def grade_trends(
                 return
 
             # Filter to period
-            cutoff = datetime.now() - timedelta(days=period)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=period)
             period_grades = [g for g in grades if g.datum_ingevoerd >= cutoff]
 
             if not period_grades:
