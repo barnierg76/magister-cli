@@ -108,6 +108,32 @@ class TokenManager:
             return None
         return token
 
+    def is_token_expiring_soon(self, minutes: int = 10) -> bool:
+        """Check if token will expire within the given minutes.
+
+        Args:
+            minutes: Number of minutes to check ahead
+
+        Returns:
+            True if token will expire soon or is already expired
+        """
+        token = self.get_token()
+        if token is None or token.expires_at is None:
+            return False
+        return datetime.now() >= (token.expires_at - timedelta(minutes=minutes))
+
+    def get_time_until_expiry(self) -> timedelta | None:
+        """Get time remaining until token expires.
+
+        Returns:
+            Time until expiry, or None if no token or no expiry time
+        """
+        token = self.get_token()
+        if token is None or token.expires_at is None:
+            return None
+        remaining = token.expires_at - datetime.now()
+        return remaining if remaining.total_seconds() > 0 else timedelta(0)
+
     def update_person_info(self, person_id: int, person_name: str) -> None:
         """Update person info in stored token."""
         token = self.get_token()

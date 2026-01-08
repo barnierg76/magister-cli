@@ -443,11 +443,238 @@ def raw_grades(
                 console.print(f"[red]Error response:[/red] {response.text[:500]}")
 
     except TokenExpiredError:
-        format_no_auth_error(console, school_code)
+        from magister_cli.api.exceptions import TokenExpiredError as TE
+        format_error(TE("Token expired"), console, school=school_code)
         raise typer.Exit(1)
     except MagisterAPIError as e:
-        format_api_error(console, e)
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+def _calculate_trend(grades: list[Cijfer], period_days: int = 30) -> str:
+    """Calculate grade trend indicator based on recent vs older grades.
+
+    Returns: ↑ (improving), ↓ (declining), → (stable)
+    """
+    if len(grades) < 4:
+        return "→"  # Not enough data
+
+    # Split grades into recent and older
+    cutoff = datetime.now() - timedelta(days=period_days // 2)
+
+    recent = [g.cijfer_numeriek for g in grades if g.datum_ingevoerd >= cutoff and g.cijfer_numeriek]
+    older = [g.cijfer_numeriek for g in grades if g.datum_ingevoerd < cutoff and g.cijfer_numeriek]
+
+    if not recent or not older:
+        return "→"
+
+    recent_avg = mean(recent)
+    older_avg = mean(older)
+
+    diff = recent_avg - older_avg
+
+    if diff > 0.3:
+        return "[green]↑[/green]"
+    elif diff < -0.3:
+        return "[red]↓[/red]"
+    else:
+        return "[dim]→[/dim]"
+
+
+@app.command("trends")
+@handle_api_errors
+def grade_trends(
+    period: Annotated[
+        int,
+        typer.Option("--period", "-p", help="Periode in dagen om te analyseren"),
+    ] = 90,
+    school: Annotated[
+        str | None,
+        typer.Option("--school", "-s", help="School code"),
+    ] = None,
+):
+    """
+    Toon cijfer trends per vak.
+
+    Analyseert cijfers over de opgegeven periode en toont:
+    - Huidige gemiddelde
+    - Trend indicator (↑ verbetering, ↓ achteruitgang, → stabiel)
+    - Aantal cijfers
+
+    Voorbeelden:
+        magister grades trends
+        magister grades trends --period 30
+        magister grades trends --period 180
+    """
+    client, school_code = _get_client(school)
+
+    try:
+        with client:
+            # Get all grades
+            grades = client.grades.recent(limit=200)
+
+            if not grades:
+                console.print("[yellow]Geen cijfers gevonden.[/yellow]")
+                return
+
+            # Filter to period
+            cutoff = datetime.now() - timedelta(days=period)
+            period_grades = [g for g in grades if g.datum_ingevoerd >= cutoff]
+
+            if not period_grades:
+                console.print(f"[yellow]Geen cijfers in de afgelopen {period} dagen.[/yellow]")
+                return
+
+            # Group by subject
+            by_subject: dict[str, list[Cijfer]] = {}
+            for g in period_grades:
+                if g.vak_naam not in by_subject:
+                    by_subject[g.vak_naam] = []
+                by_subject[g.vak_naam].append(g)
+
+            console.print(Panel(
+                f"Cijfer trends - afgelopen {period} dagen",
+                border_style="blue",
+            ))
+
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Vak", width=25)
+            table.add_column("Gemiddelde", justify="center", width=12)
+            table.add_column("Trend", justify="center", width=8)
+            table.add_column("Cijfers", justify="center", width=10)
+            table.add_column("Min-Max", justify="center", width=12)
+
+            for subject in sorted(by_subject.keys()):
+                subject_grades = by_subject[subject]
+                numeric = [g.cijfer_numeriek for g in subject_grades if g.cijfer_numeriek is not None]
+
+                if not numeric:
+                    continue
+
+                avg = mean(numeric)
+                trend = _calculate_trend(subject_grades, period)
+                count = len(numeric)
+                min_max = f"{min(numeric):.1f} - {max(numeric):.1f}"
+
+                table.add_row(
+                    subject,
+                    _format_average(avg),
+                    trend,
+                    str(count),
+                    min_max,
+                )
+
+            console.print(table)
+
+            # Overall summary
+            all_numeric = [g.cijfer_numeriek for g in period_grades if g.cijfer_numeriek]
+            if all_numeric:
+                console.print()
+                overall_avg = mean(all_numeric)
+                console.print(f"[bold]Totaal gemiddelde:[/bold] {_format_average(overall_avg)}")
+                console.print(f"[dim]{len(period_grades)} cijfers van {len(by_subject)} vakken[/dim]")
+
+    except TokenExpiredError:
+        from magister_cli.api.exceptions import TokenExpiredError as TE
+        format_error(TE("Token expired"), console, school=school_code)
+        raise typer.Exit(1)
+    except MagisterAPIError as e:
+        format_error(e, console, school=school_code)
+        raise typer.Exit(1)
+
+
+@app.command("stats")
+@handle_api_errors
+def grade_stats(
+    school: Annotated[
+        str | None,
+        typer.Option("--school", "-s", help="School code"),
+    ] = None,
+):
+    """
+    Toon gedetailleerde cijferstatistieken.
+
+    Toont voor elk vak:
+    - Gemiddelde, mediaan, standaarddeviatie
+    - Hoogste en laagste cijfer
+    - Totaal aantal cijfers
+
+    Voorbeelden:
+        magister grades stats
+    """
+    client, school_code = _get_client(school)
+
+    try:
+        with client:
+            grades = client.grades.recent(limit=300)
+
+            if not grades:
+                console.print("[yellow]Geen cijfers gevonden.[/yellow]")
+                return
+
+            # Group by subject
+            by_subject: dict[str, list[float]] = {}
+            for g in grades:
+                if g.cijfer_numeriek is not None:
+                    if g.vak_naam not in by_subject:
+                        by_subject[g.vak_naam] = []
+                    by_subject[g.vak_naam].append(g.cijfer_numeriek)
+
+            console.print(Panel(
+                "Cijferstatistieken",
+                border_style="blue",
+            ))
+
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Vak", width=20)
+            table.add_column("Gem", justify="center", width=6)
+            table.add_column("Med", justify="center", width=6)
+            table.add_column("SD", justify="center", width=6)
+            table.add_column("Min", justify="center", width=6)
+            table.add_column("Max", justify="center", width=6)
+            table.add_column("N", justify="center", width=4)
+
+            all_grades = []
+            for subject in sorted(by_subject.keys()):
+                grades_list = by_subject[subject]
+                all_grades.extend(grades_list)
+
+                avg_val = mean(grades_list)
+                med_val = median(grades_list)
+                sd_val = stdev(grades_list) if len(grades_list) > 1 else 0
+                min_val = min(grades_list)
+                max_val = max(grades_list)
+
+                table.add_row(
+                    subject[:20],
+                    _format_average(avg_val),
+                    f"{med_val:.1f}",
+                    f"{sd_val:.1f}",
+                    f"{min_val:.1f}",
+                    f"{max_val:.1f}",
+                    str(len(grades_list)),
+                )
+
+            console.print(table)
+
+            # Overall statistics
+            if all_grades:
+                console.print()
+                console.print("[bold]Totaal overzicht:[/bold]")
+                console.print(f"  Gemiddelde: {_format_average(mean(all_grades))}")
+                console.print(f"  Mediaan: {median(all_grades):.1f}")
+                console.print(f"  Spreiding: {stdev(all_grades):.1f}" if len(all_grades) > 1 else "")
+                console.print(f"  Hoogste: [green]{max(all_grades):.1f}[/green]")
+                console.print(f"  Laagste: [red]{min(all_grades):.1f}[/red]")
+                console.print(f"  Totaal: {len(all_grades)} cijfers")
+
+    except TokenExpiredError:
+        from magister_cli.api.exceptions import TokenExpiredError as TE
+        format_error(TE("Token expired"), console, school=school_code)
+        raise typer.Exit(1)
+    except MagisterAPIError as e:
+        format_error(e, console, school=school_code)
         raise typer.Exit(1)

@@ -1,16 +1,35 @@
 """Authentication CLI commands."""
 
+from datetime import datetime
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
 from magister_cli.auth import get_current_token, login, logout
+from magister_cli.auth.token_manager import get_token_manager
 from magister_cli.cli.progress import print_error, print_success, print_warning
 from magister_cli.config import get_settings
 
 console = Console()
 app = typer.Typer(help="Authentication commands")
+
+
+def _format_time_remaining(minutes: int) -> str:
+    """Format remaining time in a human-readable way."""
+    if minutes < 1:
+        return "minder dan een minuut"
+    elif minutes < 60:
+        return f"{minutes} minuut{'en' if minutes != 1 else ''}"
+    else:
+        hours = minutes // 60
+        mins = minutes % 60
+        parts = []
+        if hours > 0:
+            parts.append(f"{hours} uur")
+        if mins > 0:
+            parts.append(f"{mins} min")
+        return " en ".join(parts)
 
 
 @app.command()
@@ -32,21 +51,43 @@ def status(
         raise typer.Exit(1)
 
     token = get_current_token(school_code)
+    token_manager = get_token_manager(school_code)
 
     if token is None:
-        console.print(f"[red]Not authenticated[/red] for school: {school_code}")
-        console.print("\nRun [cyan]magister login --school {school_code}[/cyan] to authenticate.")
+        console.print(f"[red]Niet ingelogd[/red] voor school: {school_code}")
+        console.print(f"\nLog in met: [cyan]magister login --school {school_code}[/cyan]")
+        raise typer.Exit(1)
+
+    # Check if token is expired or expiring soon
+    if token.is_expired():
+        console.print("[red]Sessie verlopen[/red]")
+        console.print(f"School: [cyan]{token.school}[/cyan]")
+        console.print(f"\nLog opnieuw in met: [cyan]magister login --school {school_code}[/cyan]")
         raise typer.Exit(1)
 
     if token.person_name:
-        console.print(f"[green]Authenticated[/green] as [bold]{token.person_name}[/bold]")
+        console.print(f"[green]Ingelogd[/green] als [bold]{token.person_name}[/bold]")
     else:
-        console.print("[green]Authenticated[/green]")
+        console.print("[green]Ingelogd[/green]")
 
     console.print(f"School: [cyan]{token.school}[/cyan]")
 
+    # Show token expiry with time remaining
     if token.expires_at:
-        console.print(f"Token expires: {token.expires_at.strftime('%Y-%m-%d %H:%M')}")
+        remaining = token_manager.get_time_until_expiry()
+        if remaining:
+            minutes_left = int(remaining.total_seconds() / 60)
+            time_str = _format_time_remaining(minutes_left)
+
+            if minutes_left <= 10:
+                console.print(f"Sessie verloopt over: [yellow]{time_str}[/yellow]")
+                console.print("[dim]Tip: Log opnieuw in voor een langere sessie[/dim]")
+            elif minutes_left <= 30:
+                console.print(f"Sessie verloopt over: [yellow]{time_str}[/yellow]")
+            else:
+                console.print(f"Sessie verloopt over: [green]{time_str}[/green]")
+
+            console.print(f"[dim]({token.expires_at.strftime('%H:%M')})[/dim]")
 
 
 @app.command("login")

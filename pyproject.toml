@@ -15,6 +15,9 @@ dependencies = [
     "keyring>=25.0.0",
     "tenacity>=8.2.0",
     "mcp[cli]>=1.0.0",  # MCP server for Claude integration
+    "pyyaml>=6.0.0",  # YAML config file support
+    "icalendar>=5.0.0",  # iCal export support
+    "desktop-notifier>=5.0.0",  # Cross-platform desktop notifications
 ]
 
 [project.optional-dependencies]

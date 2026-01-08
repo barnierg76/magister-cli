@@ -6,23 +6,22 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from magister_cli.api import MagisterAPIError, MagisterClient, TokenExpiredError
+from magister_cli.api import MagisterAPIError, MagisterClient
 from magister_cli.auth import get_current_token
-from magister_cli.cli.commands import auth, grades, messages, schedule
+from magister_cli.cli.commands import auth, completion, config, export, grades, messages, notify, schedule
+from magister_cli.cli.errors import format_error
 from magister_cli.cli.formatters import (
-    format_api_error,
     format_homework_list,
     format_homework_table,
-    format_no_auth_error,
     strip_html,
 )
-from magister_cli.cli.utils import handle_api_errors
 from magister_cli.cli.progress import (
     DownloadProgress,
     api_spinner,
     print_error,
     print_success,
 )
+from magister_cli.cli.utils import handle_api_errors
 from magister_cli.config import get_settings
 from magister_cli.services.homework import HomeworkService
 
@@ -42,9 +41,14 @@ app.command("status")(auth.status)
 app.add_typer(messages.app, name="messages", help="Berichten beheren")
 app.add_typer(grades.app, name="grades", help="Cijfers bekijken")
 app.add_typer(schedule.app, name="schedule", help="Rooster bekijken")
+app.add_typer(config.app, name="config", help="Configuratie beheren")
+app.add_typer(completion.app, name="completion", help="Shell completion beheren")
+app.add_typer(export.app, name="export", help="Exporteer naar iCal en andere formaten")
+app.add_typer(notify.app, name="notify", help="Notificaties beheren")
 
 
 @app.command("homework")
+@handle_api_errors
 def homework(
     days: Annotated[
         int,
@@ -90,71 +94,58 @@ def homework(
 
     service = HomeworkService(school=school_code)
 
-    try:
-        with api_spinner("Huiswerk ophalen..."):
-            homework_days = service.get_homework(
-                days=days,
-                subject=subject,
-                include_completed=include_completed,
-            )
+    with api_spinner("Huiswerk ophalen..."):
+        homework_days = service.get_homework(
+            days=days,
+            subject=subject,
+            include_completed=include_completed,
+        )
 
-        if table_format:
-            format_homework_table(homework_days, console)
+    if table_format:
+        format_homework_table(homework_days, console)
+    else:
+        format_homework_list(homework_days, console)
+
+    # Download attachments if requested
+    if download:
+        # Collect all attachments
+        attachments_to_download = []
+        for day in homework_days:
+            for item in day.items:
+                for att in item.attachments:
+                    attachments_to_download.append((item, att))
+
+        if not attachments_to_download:
+            console.print("\n[yellow]Geen bijlagen om te downloaden.[/yellow]")
         else:
-            format_homework_list(homework_days, console)
+            # Get token for download
+            from magister_cli.api.exceptions import NotAuthenticatedError
 
-        # Download attachments if requested
-        if download:
-            # Collect all attachments
-            attachments_to_download = []
-            for day in homework_days:
-                for item in day.items:
-                    for att in item.attachments:
-                        attachments_to_download.append((item, att))
+            token_data = get_current_token(school_code)
+            if token_data is None:
+                raise NotAuthenticatedError(school_code)
 
-            if not attachments_to_download:
-                console.print("\n[yellow]Geen bijlagen om te downloaden.[/yellow]")
+            # Default output directory
+            if output_dir is None:
+                download_dir = Path.cwd() / "magister_bijlagen"
             else:
-                # Get token for download
-                token_data = get_current_token(school_code)
-                if token_data is None:
-                    format_no_auth_error(console, school_code)
-                    raise typer.Exit(1)
+                download_dir = output_dir
 
-                # Default output directory
-                if output_dir is None:
-                    download_dir = Path.cwd() / "magister_bijlagen"
-                else:
-                    download_dir = output_dir
+            console.print(f"\n[bold]📎 {len(attachments_to_download)} bijlage(n) downloaden...[/bold]")
 
-                console.print(f"\n[bold]📎 {len(attachments_to_download)} bijlage(n) downloaden...[/bold]")
+            with MagisterClient(token_data.school, token_data.access_token) as client:
+                with DownloadProgress(len(attachments_to_download)) as progress:
+                    for item, att in attachments_to_download:
+                        progress.update_file(att.name)
+                        subject_dir = download_dir / item.subject.replace("/", "-")
+                        try:
+                            client.download_attachment(att.raw, subject_dir)
+                            progress.complete_file(success=True)
+                        except MagisterAPIError as e:
+                            progress.complete_file(success=False)
+                            print_error(f"{att.name}: {e}")
 
-                with MagisterClient(token_data.school, token_data.access_token) as client:
-                    with DownloadProgress(len(attachments_to_download)) as progress:
-                        for item, att in attachments_to_download:
-                            progress.update_file(att.name)
-                            subject_dir = download_dir / item.subject.replace("/", "-")
-                            try:
-                                client.download_attachment(att.raw, subject_dir)
-                                progress.complete_file(success=True)
-                            except MagisterAPIError as e:
-                                progress.complete_file(success=False)
-                                print_error(f"{att.name}: {e}")
-
-                print_success(f"Opgeslagen in: {download_dir}")
-
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
-        raise typer.Exit(1)
-    except RuntimeError as e:
-        if "Not authenticated" in str(e):
-            format_no_auth_error(console, school_code)
-        else:
-            console.print(f"[red]Fout:[/red] {e}")
-        raise typer.Exit(1)
-    except MagisterAPIError as e:
-        format_api_error(console, e)
-        raise typer.Exit(1)
+            print_success(f"Opgeslagen in: {download_dir}")
 
 
 @app.command("tests")
@@ -207,6 +198,7 @@ def tests(
 
 
 @app.command("download")
+@handle_api_errors
 def download_attachments(
     days: Annotated[
         int,
@@ -233,14 +225,15 @@ def download_attachments(
         magister download --days 14 --output ./bijlagen
         magister download --subject engels
     """
+    from magister_cli.api.exceptions import NotAuthenticatedError
+
     settings = get_settings()
     school_code = school or settings.school
 
     # Get token
     token_data = get_current_token(school_code)
     if token_data is None:
-        format_no_auth_error(console, school_code)
-        raise typer.Exit(1)
+        raise NotAuthenticatedError(school_code)
 
     # Default output directory
     if output_dir is None:
@@ -248,58 +241,44 @@ def download_attachments(
 
     service = HomeworkService(school=school_code)
 
-    try:
-        with api_spinner("Bijlagen zoeken..."):
-            homework_days = service.get_homework(
-                days=days,
-                subject=subject,
-                include_attachments=True,
-            )
+    with api_spinner("Bijlagen zoeken..."):
+        homework_days = service.get_homework(
+            days=days,
+            subject=subject,
+            include_attachments=True,
+        )
 
-            # Collect all attachments
-            attachments_to_download = []
-            for day in homework_days:
-                for item in day.items:
-                    for att in item.attachments:
-                        attachments_to_download.append((item, att))
+        # Collect all attachments
+        attachments_to_download = []
+        for day in homework_days:
+            for item in day.items:
+                for att in item.attachments:
+                    attachments_to_download.append((item, att))
 
-        if not attachments_to_download:
-            console.print("[yellow]Geen bijlagen gevonden.[/yellow]")
-            return
+    if not attachments_to_download:
+        console.print("[yellow]Geen bijlagen gevonden.[/yellow]")
+        return
 
-        console.print(f"[bold]📎 {len(attachments_to_download)} bijlage(n) gevonden[/bold]")
-        console.print()
+    console.print(f"[bold]📎 {len(attachments_to_download)} bijlage(n) gevonden[/bold]")
+    console.print()
 
-        # Download each attachment with progress
-        with MagisterClient(token_data.school, token_data.access_token) as client:
-            with DownloadProgress(len(attachments_to_download)) as progress:
-                for item, att in attachments_to_download:
-                    progress.update_file(att.name)
-                    # Create subject subfolder
-                    subject_dir = output_dir / item.subject.replace("/", "-")
+    # Download each attachment with progress
+    with MagisterClient(token_data.school, token_data.access_token) as client:
+        with DownloadProgress(len(attachments_to_download)) as progress:
+            for item, att in attachments_to_download:
+                progress.update_file(att.name)
+                # Create subject subfolder
+                subject_dir = output_dir / item.subject.replace("/", "-")
 
-                    try:
-                        client.download_attachment(att.raw, subject_dir)
-                        progress.complete_file(success=True)
-                    except MagisterAPIError as e:
-                        progress.complete_file(success=False)
-                        print_error(f"{att.name}: {e}")
+                try:
+                    client.download_attachment(att.raw, subject_dir)
+                    progress.complete_file(success=True)
+                except MagisterAPIError as e:
+                    progress.complete_file(success=False)
+                    print_error(f"{att.name}: {e}")
 
-        console.print()
-        print_success(f"Downloads opgeslagen in: {output_dir}")
-
-    except TokenExpiredError:
-        format_no_auth_error(console, school_code)
-        raise typer.Exit(1)
-    except RuntimeError as e:
-        if "Not authenticated" in str(e):
-            format_no_auth_error(console, school_code)
-        else:
-            console.print(f"[red]Fout:[/red] {e}")
-        raise typer.Exit(1)
-    except MagisterAPIError as e:
-        format_api_error(console, e)
-        raise typer.Exit(1)
+    console.print()
+    print_success(f"Downloads opgeslagen in: {output_dir}")
 
 
 if __name__ == "__main__":

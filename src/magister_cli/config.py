@@ -2,9 +2,41 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
+import yaml
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+# Config file location
+CONFIG_PATH = Path.home() / ".config" / "magister-cli" / "config.yaml"
+
+
+class YamlConfigSettingsSource(PydanticBaseSettingsSource):
+    """Custom settings source that loads from YAML config file."""
+
+    def get_field_value(
+        self, field: Any, field_name: str
+    ) -> tuple[Any, str, bool]:
+        """Get field value from YAML config."""
+        config = self._load_config()
+        if field_name in config:
+            return config[field_name], field_name, False
+        return None, field_name, False
+
+    def _load_config(self) -> dict:
+        """Load config from YAML file."""
+        if not CONFIG_PATH.exists():
+            return {}
+        try:
+            with open(CONFIG_PATH) as f:
+                return yaml.safe_load(f) or {}
+        except yaml.YAMLError:
+            return {}
+
+    def __call__(self) -> dict[str, Any]:
+        """Return all config values."""
+        return self._load_config()
 
 
 def validate_school_code(school: str | None) -> str:
@@ -78,6 +110,23 @@ class Settings(BaseSettings):
     def token_file(self) -> Path:
         """Path to the token cache file."""
         return self.cache_dir / "token.json"
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Customize settings sources - priority: env > yaml > defaults."""
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            YamlConfigSettingsSource(settings_cls),
+        )
 
 
 # Global settings instance
