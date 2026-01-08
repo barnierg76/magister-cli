@@ -1,5 +1,8 @@
 """Grades CLI commands."""
 
+import logging
+from datetime import datetime, timedelta
+from statistics import mean, median, stdev
 from typing import Annotated
 
 import typer
@@ -10,7 +13,8 @@ from rich.table import Table
 from magister_cli.api import MagisterAPIError, MagisterClient, TokenExpiredError
 from magister_cli.api.models import Cijfer
 from magister_cli.auth import get_current_token
-from magister_cli.cli.formatters import format_api_error, format_no_auth_error
+from magister_cli.cli.errors import format_error
+from magister_cli.cli.utils import handle_api_errors
 from magister_cli.config import get_settings
 
 console = Console()
@@ -74,6 +78,10 @@ def recent_grades(
         str | None,
         typer.Option("--school", "-s", help="School code"),
     ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", "-d", help="Toon debug info"),
+    ] = False,
 ):
     """
     Toon recente cijfers.
@@ -81,15 +89,29 @@ def recent_grades(
     Voorbeelden:
         magister grades recent
         magister grades recent --top 25
+        magister grades recent --debug
     """
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
+        console.print("[dim]Debug mode enabled[/dim]")
+
     client, school_code = _get_client(school)
 
     try:
         with client:
+            if debug:
+                console.print(f"[dim]Person ID: {client._person_id}[/dim]")
+                console.print(f"[dim]Fetching {top} recent grades...[/dim]")
+
             grades = client.grades.recent(limit=top)
+
+            if debug:
+                console.print(f"[dim]Retrieved {len(grades)} grades[/dim]")
 
             if not grades:
                 console.print("[yellow]Geen cijfers gevonden.[/yellow]")
+                if not debug:
+                    console.print("[dim]Tip: Gebruik --debug voor meer informatie[/dim]")
                 return
 
             table = Table(
@@ -362,4 +384,70 @@ def list_enrollments(
         raise typer.Exit(1)
     except MagisterAPIError as e:
         format_api_error(console, e)
+        raise typer.Exit(1)
+
+
+@app.command("raw")
+def raw_grades(
+    school: Annotated[
+        str | None,
+        typer.Option("--school", "-s", help="School code"),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", "-n", help="Aantal cijfers"),
+    ] = 10,
+):
+    """
+    Debug: Toon ruwe API response voor cijfers.
+
+    Gebruik dit om te zien wat de API daadwerkelijk teruggeeft.
+    """
+    import json
+
+    client, school_code = _get_client(school)
+
+    try:
+        with client:
+            # Get student ID (triggers account fetch if needed)
+            student_id = client._ensure_student_id()
+
+            console.print(f"[bold]Student ID:[/bold] {student_id}")
+            console.print(f"[bold]School:[/bold] {school_code}")
+            console.print(f"[bold]Is Parent:[/bold] {client._is_parent}")
+            console.print(f"[bold]Person Name:[/bold] {client._person_name}")
+            console.print()
+
+            # Make raw API call
+            endpoint = f"/personen/{student_id}/cijfers/laatste"
+            console.print(f"[bold]Endpoint:[/bold] {endpoint}?top={limit}")
+            console.print()
+
+            response = client._client.get(endpoint, params={"top": limit})
+            console.print(f"[bold]Status:[/bold] {response.status_code}")
+            console.print()
+
+            if response.status_code == 200:
+                data = response.json()
+                console.print("[bold]Response:[/bold]")
+                console.print(json.dumps(data, indent=2, default=str)[:2000])
+
+                if isinstance(data, dict):
+                    console.print(f"\n[bold]Keys:[/bold] {list(data.keys())}")
+                    if "Items" in data:
+                        console.print(f"[bold]Items count:[/bold] {len(data['Items'])}")
+                        if data["Items"]:
+                            console.print("\n[bold]First item keys:[/bold]")
+                            console.print(list(data["Items"][0].keys()))
+            else:
+                console.print(f"[red]Error response:[/red] {response.text[:500]}")
+
+    except TokenExpiredError:
+        format_no_auth_error(console, school_code)
+        raise typer.Exit(1)
+    except MagisterAPIError as e:
+        format_api_error(console, e)
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)

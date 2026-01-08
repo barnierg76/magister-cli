@@ -147,8 +147,8 @@ class MagisterAsyncService:
             response = await client.get(f"/personen/{self._person_id}/kinderen")
             response.raise_for_status()
             data = response.json()
-            if isinstance(data, dict) and "Items" in data:
-                return data["Items"]
+            if isinstance(data, dict):
+                return data.get("items", data.get("Items", []))
             elif isinstance(data, list):
                 return data
             return []
@@ -189,8 +189,10 @@ class MagisterAsyncService:
         response.raise_for_status()
 
         # Parse items with homework content
+        data = response.json()
+        api_items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         items = []
-        for item in response.json().get("Items", []):
+        for item in api_items:
             if item.get("Inhoud") or item.get("Huiswerk"):
                 items.append(self.core.parse_homework_from_api(item))
 
@@ -257,8 +259,10 @@ class MagisterAsyncService:
         )
         response.raise_for_status()
 
+        data = response.json()
+        api_items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         grades = []
-        for item in response.json().get("Items", []):
+        for item in api_items:
             grades.append(self.core.parse_grade_from_api(item))
 
         return grades
@@ -291,8 +295,10 @@ class MagisterAsyncService:
         )
         response.raise_for_status()
 
+        data = response.json()
+        api_items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         items = []
-        for item in response.json().get("Items", []):
+        for item in api_items:
             items.append(self.core.parse_schedule_from_api(item))
 
         # Sort by start time

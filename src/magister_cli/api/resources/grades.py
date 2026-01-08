@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from magister_cli.api.base import BaseResource
 from magister_cli.api.models import Aanmelding, Cijfer, Vak
+
+logger = logging.getLogger(__name__)
 
 
 class GradesResource(BaseResource):
@@ -22,8 +26,27 @@ class GradesResource(BaseResource):
             f"/personen/{self._person_id}/cijfers/laatste",
             params={"top": limit},
         )
-        items = data.get("Items", []) if isinstance(data, dict) else data
-        return [Cijfer.model_validate(item) for item in items]
+        logger.debug(f"Recent grades API response type: {type(data)}")
+        logger.debug(f"Recent grades API response: {data}")
+
+        # API returns lowercase "items", not "Items"
+        if isinstance(data, dict):
+            items = data.get("items", data.get("Items", []))
+        else:
+            items = data
+        logger.debug(f"Extracted {len(items)} items from response")
+
+        grades = []
+        for item in items:
+            try:
+                grade = Cijfer.model_validate(item)
+                grades.append(grade)
+            except Exception as e:
+                logger.warning(f"Failed to parse grade item: {e}")
+                logger.debug(f"Problematic item: {item}")
+
+        logger.debug(f"Successfully parsed {len(grades)} grades")
+        return grades
 
     def enrollments(self) -> list[Aanmelding]:
         """Get all enrollments (school years) for the student.
@@ -32,7 +55,7 @@ class GradesResource(BaseResource):
             List of enrollments, most recent first
         """
         data = self._get(f"/personen/{self._person_id}/aanmeldingen")
-        items = data.get("Items", []) if isinstance(data, dict) else data
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         enrollments = [Aanmelding.model_validate(item) for item in items]
         # Sort by leerjaar descending (most recent first)
         return sorted(enrollments, key=lambda e: e.leerjaar, reverse=True)
@@ -73,13 +96,13 @@ class GradesResource(BaseResource):
         # The response contains a complex structure with grades per subject per period
         # We flatten it to a simple list of grades
         grades = []
-        items = data.get("Items", []) if isinstance(data, dict) else []
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else []
 
         for item in items:
             # Each item is a subject with its grades
-            cijfer_list = item.get("CijferKolommen", [])
+            cijfer_list = item.get("cijferKolommen", item.get("CijferKolommen", []))
             for kolom in cijfer_list:
-                cijfer_items = kolom.get("Cijfers", [])
+                cijfer_items = kolom.get("cijfers", kolom.get("Cijfers", []))
                 for cijfer_data in cijfer_items:
                     try:
                         cijfer = Cijfer.model_validate(cijfer_data)
@@ -106,7 +129,7 @@ class GradesResource(BaseResource):
             enrollment_id = enrollment.id
 
         data = self._get(f"/aanmeldingen/{enrollment_id}/vakken")
-        items = data.get("Items", []) if isinstance(data, dict) else data
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         return [Vak.model_validate(item) for item in items]
 
     def by_subject(

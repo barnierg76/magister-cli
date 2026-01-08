@@ -24,8 +24,9 @@ class AccountResource(BaseResource):
             List of children, empty if not a parent account
         """
         data = self._get(f"/personen/{account_id}/kinderen")
-        if isinstance(data, dict) and "Items" in data:
-            return [Kind.model_validate(item) for item in data["Items"]]
+        if isinstance(data, dict):
+            items = data.get("items", data.get("Items", []))
+            return [Kind.model_validate(item) for item in items]
         if isinstance(data, list):
             return [Kind.model_validate(item) for item in data]
         return []

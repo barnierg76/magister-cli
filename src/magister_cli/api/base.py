@@ -53,11 +53,14 @@ class BaseResource:
         return response.json()
 
     def _extract_items(self, data: Any) -> list:
-        """Extract Items array from Magister API response.
+        """Extract items array from Magister API response.
 
-        The Magister API wraps lists in {"Items": [...]} objects.
+        The Magister API wraps lists in {"items": [...]} or {"Items": [...]} objects.
+        Note: API uses lowercase "items" in newer endpoints.
         """
-        return data.get("Items", []) if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            return data.get("items", data.get("Items", []))
+        return data
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Any:
         """Make an API request."""

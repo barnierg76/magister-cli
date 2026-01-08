@@ -25,7 +25,7 @@ class AppointmentsResource(BaseResource):
             f"/personen/{self._person_id}/afspraken",
             params={"van": start.isoformat(), "tot": end.isoformat()},
         )
-        items = data.get("Items", []) if isinstance(data, dict) else data
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         return [Afspraak.model_validate(item) for item in items]
 
     def get(self, afspraak_id: int) -> Afspraak:

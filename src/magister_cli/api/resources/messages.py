@@ -24,7 +24,7 @@ class MessagesResource(BaseResource):
             "/berichten/postvakin/berichten",
             params={"top": top, "skip": skip},
         )
-        items = data.get("Items", []) if isinstance(data, dict) else data
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         return [Bericht.model_validate(item) for item in items]
 
     def sent(self, top: int = 25, skip: int = 0) -> list[Bericht]:
@@ -41,7 +41,7 @@ class MessagesResource(BaseResource):
             "/berichten/verzendenitems/berichten",
             params={"top": top, "skip": skip},
         )
-        items = data.get("Items", []) if isinstance(data, dict) else data
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         return [Bericht.model_validate(item) for item in items]
 
     def deleted(self, top: int = 25, skip: int = 0) -> list[Bericht]:
@@ -58,7 +58,7 @@ class MessagesResource(BaseResource):
             "/berichten/verwijderditems/berichten",
             params={"top": top, "skip": skip},
         )
-        items = data.get("Items", []) if isinstance(data, dict) else data
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
         return [Bericht.model_validate(item) for item in items]
 
     def get(self, message_id: int) -> BerichtDetail:

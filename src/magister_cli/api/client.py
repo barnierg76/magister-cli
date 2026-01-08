@@ -236,8 +236,9 @@ class MagisterClient:
 
         try:
             data = self._request("GET", f"/personen/{self._account_id}/kinderen")
-            if isinstance(data, dict) and "Items" in data:
-                self._children = [Kind.model_validate(item) for item in data["Items"]]
+            if isinstance(data, dict):
+                items = data.get("items", data.get("Items", []))
+                self._children = [Kind.model_validate(item) for item in items]
             elif isinstance(data, list):
                 self._children = [Kind.model_validate(item) for item in data]
             else:
