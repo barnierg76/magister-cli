@@ -7,6 +7,22 @@ sync and async service implementations.
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import List, Optional
+from zoneinfo import ZoneInfo
+
+# Netherlands timezone
+DUTCH_TZ = ZoneInfo("Europe/Amsterdam")
+
+
+def to_dutch_time(dt: datetime) -> datetime:
+    """Convert a datetime to Dutch timezone (Europe/Amsterdam).
+
+    If the datetime is timezone-aware, it will be converted.
+    If it's naive (no timezone), it's assumed to be UTC.
+    """
+    if dt.tzinfo is None:
+        # Assume naive datetime is UTC
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt.astimezone(DUTCH_TZ)
 
 
 @dataclass
@@ -52,7 +68,7 @@ class HomeworkItem:
             "subject": self.subject,
             "subject_abbr": self.subject_abbr,
             "description": self.description,
-            "deadline": self.deadline.isoformat(),
+            "deadline": to_dutch_time(self.deadline).isoformat(),
             "lesson_number": self.lesson_number,
             "location": self.location,
             "teacher": self.teacher,
@@ -134,7 +150,7 @@ class GradeInfo:
             "subject": self.subject,
             "grade": self.grade,
             "weight": self.weight,
-            "date": self.date.isoformat() if self.date else None,
+            "date": to_dutch_time(self.date).isoformat() if self.date else None,
             "description": self.description,
             "is_sufficient": self.is_sufficient,
         }
@@ -156,8 +172,8 @@ class ScheduleItem:
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
-            "start": self.start.isoformat(),
-            "end": self.end.isoformat(),
+            "start": to_dutch_time(self.start).isoformat(),
+            "end": to_dutch_time(self.end).isoformat(),
             "subject": self.subject,
             "location": self.location,
             "teacher": self.teacher,
