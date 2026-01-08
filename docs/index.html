@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magister CLI - Documentatie</title>
+    <link rel="stylesheet" href="assets/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <a href="#" class="logo">Magister CLI</a>
+            <div class="nav-links">
+                <a href="#installatie">Installatie</a>
+                <a href="#commando">Commando's</a>
+                <a href="#mcp">MCP Server</a>
+                <a href="#architectuur">Architectuur</a>
+                <a href="https://github.com/barnierg76/magister-cli" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <h1>Magister CLI</h1>
+            <p class="subtitle">CLI tool voor het ophalen van data uit Magister (Nederlands leerlingvolgsysteem)</p>
+            <div class="hero-buttons">
+                <a href="#installatie" class="btn btn-primary">Aan de slag</a>
+                <a href="https://github.com/barnierg76/magister-cli" class="btn btn-secondary" target="_blank">Bekijk op GitHub</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <section id="features" class="features">
+            <h2>Features</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📚</div>
+                    <h3>Huiswerk</h3>
+                    <p>Bekijk huiswerk, filter op vak, en download bijlagen automatisch</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Cijfers</h3>
+                    <p>Recente cijfers bekijken met gewogen gemiddelde berekening</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📅</div>
+                    <h3>Rooster</h3>
+                    <p>Dagelijks en wekelijks rooster met uitval-indicatoren</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>MCP Server</h3>
+                    <p>Claude AI integratie via Model Context Protocol</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="installatie">
+            <h2>Installatie</h2>
+            <div class="code-block">
+                <pre><code># Clone de repository
+git clone https://github.com/barnierg76/magister-cli.git
+cd magister-cli
+
+# Installeer met uv (aanbevolen)
+uv pip install -e .
+
+# Of met pip
+pip install -e .
+
+# Installeer Playwright browser
+playwright install chromium</code></pre>
+            </div>
+        </section>
+
+        <section id="snelstart">
+            <h2>Snelstart</h2>
+            <div class="code-block">
+                <pre><code># Login bij je school
+magister login --school vsvonh
+
+# Bekijk huiswerk voor de komende 7 dagen
+magister homework
+
+# Bekijk aankomende toetsen
+magister tests --days 14
+
+# Bekijk rooster
+magister schedule today</code></pre>
+            </div>
+        </section>
+
+        <section id="commando">
+            <h2>Commando's</h2>
+
+            <h3>Authenticatie</h3>
+            <div class="code-block">
+                <pre><code># Login via browser
+magister login --school &lt;schoolcode&gt;
+
+# Controleer status
+magister status
+
+# Uitloggen
+magister logout</code></pre>
+            </div>
+
+            <h3>Huiswerk</h3>
+            <div class="code-block">
+                <pre><code># Huiswerk komende 7 dagen
+magister homework
+
+# Huiswerk komende 14 dagen
+magister homework --days 14
+
+# Filter op vak
+magister homework --subject wiskunde
+
+# Tabel weergave
+magister homework --table
+
+# Download bijlagen
+magister homework --download
+magister homework --download --output ./bijlagen</code></pre>
+            </div>
+
+            <h3>Toetsen</h3>
+            <div class="code-block">
+                <pre><code># Toetsen komende 14 dagen
+magister tests
+
+# Langere periode
+magister tests --days 30</code></pre>
+            </div>
+
+            <h3>Cijfers</h3>
+            <div class="code-block">
+                <pre><code># Recente cijfers
+magister grades recent
+
+# Laatste 20 cijfers
+magister grades recent --limit 20</code></pre>
+            </div>
+
+            <h3>Rooster</h3>
+            <div class="code-block">
+                <pre><code># Vandaag
+magister schedule today
+
+# Morgen
+magister schedule tomorrow
+
+# Specifieke datum
+magister schedule date 2024-01-15</code></pre>
+            </div>
+
+            <h3>Berichten</h3>
+            <div class="code-block">
+                <pre><code># Inbox bekijken
+magister messages inbox</code></pre>
+            </div>
+
+            <h3>Bijlagen downloaden</h3>
+            <div class="code-block">
+                <pre><code># Download alle bijlagen van huiswerk
+magister download
+
+# Filter op vak
+magister download --subject engels
+
+# Aangepaste output directory
+magister download --output ./studiematerialen</code></pre>
+            </div>
+        </section>
+
+        <section id="shell-completion">
+            <h2>Shell Completion</h2>
+            <p>Magister CLI ondersteunt shell completion voor bash, zsh, en fish.</p>
+            <div class="code-block">
+                <pre><code># Bash
+magister --install-completion bash
+
+# Zsh
+magister --install-completion zsh
+
+# Fish
+magister --install-completion fish</code></pre>
+            </div>
+        </section>
+
+        <section id="mcp">
+            <h2>MCP Server (Claude Integratie)</h2>
+            <p>Magister CLI bevat een MCP (Model Context Protocol) server waarmee Claude en andere AI agents direct toegang hebben tot Magister data.</p>
+
+            <h3>Configuratie in Claude Desktop</h3>
+            <p>Voeg toe aan je Claude Desktop config (<code>~/Library/Application Support/Claude/claude_desktop_config.json</code>):</p>
+            <div class="code-block">
+                <pre><code>{
+  "mcpServers": {
+    "magister": {
+      "command": "magister-mcp"
+    }
+  }
+}</code></pre>
+            </div>
+
+            <h3>MCP Tools</h3>
+            <table class="tools-table">
+                <thead>
+                    <tr>
+                        <th>Tool</th>
+                        <th>Beschrijving</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>get_student_summary</code></td>
+                        <td>Compleet dagelijks overzicht (huiswerk, cijfers, rooster)</td>
+                    </tr>
+                    <tr>
+                        <td><code>get_homework</code></td>
+                        <td>Huiswerk ophalen met filters</td>
+                    </tr>
+                    <tr>
+                        <td><code>get_upcoming_tests</code></td>
+                        <td>Aankomende toetsen</td>
+                    </tr>
+                    <tr>
+                        <td><code>get_recent_grades</code></td>
+                        <td>Recente cijfers met gemiddelde</td>
+                    </tr>
+                    <tr>
+                        <td><code>get_today_schedule</code></td>
+                        <td>Rooster van vandaag</td>
+                    </tr>
+                    <tr>
+                        <td><code>get_schedule</code></td>
+                        <td>Rooster voor datumbereik</td>
+                    </tr>
+                    <tr>
+                        <td><code>check_auth_status</code></td>
+                        <td>Authenticatie status controleren</td>
+                    </tr>
+                    <tr>
+                        <td><code>download_homework_materials</code></td>
+                        <td>Download huiswerk bijlagen</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Voorbeeld Claude prompts</h3>
+            <ul class="prompt-list">
+                <li>"Wat heb ik vandaag voor huiswerk?"</li>
+                <li>"Welke toetsen heb ik de komende 2 weken?"</li>
+                <li>"Hoe staat mijn gemiddelde ervoor?"</li>
+                <li>"Download alle bijlagen voor wiskunde"</li>
+            </ul>
+        </section>
+
+        <section id="configuratie">
+            <h2>Configuratie</h2>
+
+            <h3>Environment Variables</h3>
+            <div class="code-block">
+                <pre><code># School code (optioneel, kan ook via --school flag)
+export MAGISTER_SCHOOL=vsvonh
+
+# OAuth timeout in seconden (default: 120)
+export MAGISTER_OAUTH_TIMEOUT=180
+
+# Headless browser mode (default: false)
+export MAGISTER_HEADLESS=true</code></pre>
+            </div>
+
+            <h3>Config Bestand</h3>
+            <p>Config bestand: <code>~/.config/magister-cli/config.yaml</code></p>
+            <div class="code-block">
+                <pre><code>school: vsvonh
+headless: false
+oauth_timeout: 120</code></pre>
+            </div>
+        </section>
+
+        <section id="architectuur">
+            <h2>Architectuur</h2>
+            <div class="code-block">
+                <pre><code>magister-cli/
+   src/magister_cli/
+      api/              # Magister API client
+      auth/             # OAuth authenticatie
+      cli/              # CLI commands en formatters
+         commands/      # Typer subcommands
+         formatters.py  # Rich output formatting
+         progress.py    # Progress indicators
+      mcp/              # MCP server voor Claude
+         server.py      # FastMCP tools
+      services/         # Business logic
+         core.py        # I/O agnostic domain objects
+         async_magister.py  # Async service
+         sync_magister.py   # Sync wrapper
+      config.py         # Settings
+   tests/</code></pre>
+            </div>
+
+            <h3>Design Principles</h3>
+            <ul>
+                <li><strong>Async-first</strong>: Primaire implementatie is async voor parallelle API calls</li>
+                <li><strong>I/O agnostic core</strong>: Business logic gescheiden van I/O</li>
+                <li><strong>MCP-ready</strong>: Alle CLI functionaliteit beschikbaar als MCP tools</li>
+                <li><strong>Rich progress</strong>: Duidelijke feedback via spinners en progress bars</li>
+            </ul>
+        </section>
+
+        <section id="development">
+            <h2>Development</h2>
+            <div class="code-block">
+                <pre><code># Installeer dev dependencies
+uv pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Linting
+ruff check .
+ruff format .
+
+# MCP server testen
+mcp dev magister_cli/mcp/server.py</code></pre>
+            </div>
+        </section>
+
+        <section id="bijdragen">
+            <h2>Bijdragen</h2>
+            <p>Pull requests welkom! Zorg ervoor dat tests slagen en code geformateerd is met ruff.</p>
+            <a href="https://github.com/barnierg76/magister-cli" class="btn btn-primary" target="_blank">Bekijk op GitHub</a>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Magister CLI - MIT License</p>
+            <p><a href="https://github.com/barnierg76/magister-cli">GitHub</a></p>
+        </div>
+    </footer>
+</body>
+</html>
