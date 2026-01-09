@@ -14,6 +14,10 @@ from magister_cli.api.models.appointments import (
     Lokaal,
     Vak,
 )
+from magister_cli.api.models.assignments import (
+    Opdracht,
+    OpdrachtResponse,
+)
 from magister_cli.api.models.attachments import Bijlage, BijlageLink
 from magister_cli.api.models.base import MagisterModel
 from magister_cli.api.models.grades import Cijfer, CijferKolom, CijferResponse
@@ -28,11 +32,23 @@ from magister_cli.api.models.enrollments import (
     VakDocent,
     VakInschrijving,
 )
+from magister_cli.api.models.learningmaterials import (
+    Lesmateriaal,
+    LesmateriaalResponse,
+    LesmateriaalVak,
+)
 from magister_cli.api.models.messages import (
     Afzender,
     Bericht,
     BerichtDetail,
     BerichtenResponse,
+)
+from magister_cli.api.models.studyguides import (
+    Studiewijzer,
+    StudiewijzerBron,
+    StudiewijzerOnderdeel,
+    StudiewijzerOnderdelenResponse,
+    StudiewijzerResponse,
 )
 
 __all__ = [
@@ -50,6 +66,9 @@ __all__ = [
     "Docent",
     "Lokaal",
     "Vak",
+    # Assignments
+    "Opdracht",
+    "OpdrachtResponse",
     # Attachments
     "Bijlage",
     "BijlageLink",
@@ -67,9 +86,19 @@ __all__ = [
     "VakCijferOverzicht",
     "VakDocent",
     "VakInschrijving",
+    # Learning Materials
+    "Lesmateriaal",
+    "LesmateriaalResponse",
+    "LesmateriaalVak",
     # Messages
     "Afzender",
     "Bericht",
     "BerichtDetail",
     "BerichtenResponse",
+    # Study Guides
+    "Studiewijzer",
+    "StudiewijzerBron",
+    "StudiewijzerOnderdeel",
+    "StudiewijzerOnderdelenResponse",
+    "StudiewijzerResponse",
 ]

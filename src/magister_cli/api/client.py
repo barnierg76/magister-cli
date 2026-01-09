@@ -22,13 +22,16 @@ from magister_cli.api.exceptions import (
     RateLimitError,
     TokenExpiredError,
 )
-from magister_cli.api.models import Account, Afspraak, Bijlage, Cijfer, Kind
+from magister_cli.api.models import Account, Afspraak, Bijlage, Cijfer, Kind, Lesmateriaal, Opdracht, Studiewijzer
 from magister_cli.api.resources import (
     AccountResource,
     AppointmentsResource,
+    AssignmentsResource,
     AttachmentsResource,
     GradesResource,
+    LearningMaterialsResource,
     MessagesResource,
+    StudyGuidesResource,
 )
 from magister_cli.config import get_settings, validate_school_code
 
@@ -71,9 +74,12 @@ class MagisterClient:
         # Resources (lazy initialized)
         self._account_resource: AccountResource | None = None
         self._appointments_resource: AppointmentsResource | None = None
+        self._assignments_resource: AssignmentsResource | None = None
         self._grades_resource: GradesResource | None = None
         self._attachments_resource: AttachmentsResource | None = None
+        self._learning_materials_resource: LearningMaterialsResource | None = None
         self._messages_resource: MessagesResource | None = None
+        self._study_guides_resource: StudyGuidesResource | None = None
 
     @property
     def base_url(self) -> str:
@@ -101,9 +107,12 @@ class MagisterClient:
         # Reset resources
         self._account_resource = None
         self._appointments_resource = None
+        self._assignments_resource = None
         self._grades_resource = None
         self._attachments_resource = None
+        self._learning_materials_resource = None
         self._messages_resource = None
+        self._study_guides_resource = None
 
     def _ensure_client(self) -> httpx.Client:
         """Ensure client is initialized."""
@@ -168,6 +177,33 @@ class MagisterClient:
                 self._ensure_client(), self._ensure_student_id()
             )
         return self._messages_resource
+
+    @property
+    def study_guides(self) -> StudyGuidesResource:
+        """Access study guide (studiewijzer) API methods."""
+        if self._study_guides_resource is None:
+            self._study_guides_resource = StudyGuidesResource(
+                self._ensure_client(), self._ensure_student_id()
+            )
+        return self._study_guides_resource
+
+    @property
+    def learning_materials(self) -> LearningMaterialsResource:
+        """Access learning materials (lesmateriaal) API methods."""
+        if self._learning_materials_resource is None:
+            self._learning_materials_resource = LearningMaterialsResource(
+                self._ensure_client(), self._ensure_student_id()
+            )
+        return self._learning_materials_resource
+
+    @property
+    def assignments(self) -> AssignmentsResource:
+        """Access ELO assignment (opdracht) API methods."""
+        if self._assignments_resource is None:
+            self._assignments_resource = AssignmentsResource(
+                self._ensure_client(), self._ensure_student_id()
+            )
+        return self._assignments_resource
 
     # -------------------------------------------------------------------------
     # Direct methods (backward compatible)

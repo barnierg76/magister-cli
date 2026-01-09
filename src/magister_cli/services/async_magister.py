@@ -602,3 +602,228 @@ class MagisterAsyncService:
         client = self._ensure_client()
         response = await client.put(f"/berichten/{message_id}/gelezen")
         response.raise_for_status()
+
+    # -------------------------------------------------------------------------
+    # Study Guide (Studiewijzer) Operations
+    # -------------------------------------------------------------------------
+
+    async def get_study_guides(self) -> List[dict]:
+        """Get all study guides for the student.
+
+        Returns:
+            List of study guide dictionaries
+        """
+        client = self._ensure_client()
+        response = await client.get(f"/leerlingen/{self._person_id}/studiewijzers")
+        response.raise_for_status()
+
+        data = response.json()
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+
+        guides = []
+        for item in items:
+            guides.append({
+                "id": item.get("Id"),
+                "title": item.get("Titel"),
+                "from_date": item.get("Van"),
+                "to_date": item.get("TotEnMet"),
+                "subject_codes": item.get("VakCodes", []),
+                "is_visible": item.get("IsZichtbaar", True),
+                "in_archive": item.get("InLeerlingArchief", False),
+            })
+
+        return guides
+
+    async def get_study_guide(self, guide_id: int) -> dict:
+        """Get full details of a study guide including sections.
+
+        Args:
+            guide_id: The study guide ID
+
+        Returns:
+            Full study guide with sections and resources
+        """
+        client = self._ensure_client()
+        response = await client.get(
+            f"/leerlingen/{self._person_id}/studiewijzers/{guide_id}"
+        )
+        response.raise_for_status()
+
+        data = response.json()
+
+        # Parse sections (onderdelen)
+        onderdelen_data = data.get("Onderdelen", {})
+        onderdelen_items = onderdelen_data.get("Items", []) if isinstance(onderdelen_data, dict) else []
+
+        sections = []
+        for section in onderdelen_items:
+            # Parse resources (bronnen)
+            bronnen = []
+            for bron in section.get("Bronnen", []):
+                bronnen.append({
+                    "id": bron.get("Id"),
+                    "name": bron.get("Naam"),
+                    "uri": bron.get("Uri"),
+                    "type": bron.get("BronSoort"),
+                    "content_type": bron.get("ContentType"),
+                    "size": bron.get("Grootte"),
+                })
+
+            sections.append({
+                "id": section.get("Id"),
+                "title": section.get("Titel"),
+                "description": section.get("Omschrijving", ""),
+                "from_date": section.get("Van"),
+                "to_date": section.get("TotEnMet"),
+                "is_visible": section.get("IsZichtbaar", True),
+                "color": section.get("Kleur", 0),
+                "order": section.get("Volgnummer", 0),
+                "resources": bronnen,
+            })
+
+        return {
+            "id": data.get("Id"),
+            "title": data.get("Titel"),
+            "from_date": data.get("Van"),
+            "to_date": data.get("TotEnMet"),
+            "subject_codes": data.get("VakCodes", []),
+            "is_visible": data.get("IsZichtbaar", True),
+            "in_archive": data.get("InLeerlingArchief", False),
+            "sections": sections,
+            "section_count": len(sections),
+        }
+
+    # -------------------------------------------------------------------------
+    # Learning Materials (Lesmateriaal) Operations
+    # -------------------------------------------------------------------------
+
+    async def get_learning_materials(self) -> List[dict]:
+        """Get all digital learning materials for the student.
+
+        Returns:
+            List of learning material dictionaries (textbooks, online resources)
+        """
+        client = self._ensure_client()
+        response = await client.get(f"/personen/{self._person_id}/lesmateriaal")
+        response.raise_for_status()
+
+        data = response.json()
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+
+        materials = []
+        for item in items:
+            vak = item.get("Vak", {})
+            materials.append({
+                "id": item.get("Id"),
+                "title": item.get("Titel"),
+                "publisher": item.get("Uitgeverij"),
+                "ean": item.get("EAN"),
+                "status": item.get("Status", 0),
+                "material_type": item.get("MateriaalType", 0),
+                "start_date": item.get("Start"),
+                "end_date": item.get("Eind"),
+                "preview_image": item.get("PreviewImageUrl"),
+                "subject": {
+                    "id": vak.get("Id"),
+                    "abbreviation": vak.get("Afkorting"),
+                    "name": vak.get("Omschrijving"),
+                } if vak else None,
+            })
+
+        return materials
+
+    # -------------------------------------------------------------------------
+    # Assignment (Opdracht) Operations
+    # -------------------------------------------------------------------------
+
+    async def get_assignments(self) -> List[dict]:
+        """Get all ELO assignments for the student.
+
+        Returns:
+            List of assignment dictionaries
+        """
+        client = self._ensure_client()
+        response = await client.get(f"/personen/{self._person_id}/opdrachten")
+        response.raise_for_status()
+
+        data = response.json()
+        items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+
+        assignments = []
+        for item in items:
+            # Parse attachments
+            bijlagen = []
+            for b in item.get("Bijlagen", []):
+                bijlagen.append({
+                    "id": b.get("Id"),
+                    "name": b.get("Naam"),
+                    "mime_type": b.get("ContentType"),
+                    "size": b.get("Grootte"),
+                })
+
+            assignments.append({
+                "id": item.get("Id"),
+                "title": item.get("Titel"),
+                "description": item.get("Omschrijving", ""),
+                "subject": item.get("Vak"),
+                "deadline": item.get("InleverenVoor"),
+                "submitted_at": item.get("IngeleverdOp"),
+                "grade": item.get("Beoordeling"),
+                "graded_at": item.get("BeoordeeldOp"),
+                "status": item.get("StatusLaatsteOpdrachtVersie", 0),
+                "version": item.get("LaatsteOpdrachtVersienummer", 0),
+                "can_resubmit": item.get("OpnieuwInleveren", False),
+                "is_closed": item.get("Afgesloten", False),
+                "can_submit": item.get("MagInleveren", True),
+                "attachments": bijlagen,
+                "is_submitted": item.get("IngeleverdOp") is not None,
+                "is_graded": item.get("BeoordeeldOp") is not None,
+            })
+
+        return assignments
+
+    async def get_assignment(self, assignment_id: int) -> dict:
+        """Get full details of a single assignment.
+
+        Args:
+            assignment_id: The assignment ID
+
+        Returns:
+            Full assignment details
+        """
+        client = self._ensure_client()
+        response = await client.get(
+            f"/personen/{self._person_id}/opdrachten/{assignment_id}"
+        )
+        response.raise_for_status()
+
+        item = response.json()
+
+        # Parse attachments
+        bijlagen = []
+        for b in item.get("Bijlagen", []):
+            bijlagen.append({
+                "id": b.get("Id"),
+                "name": b.get("Naam"),
+                "mime_type": b.get("ContentType"),
+                "size": b.get("Grootte"),
+            })
+
+        return {
+            "id": item.get("Id"),
+            "title": item.get("Titel"),
+            "description": item.get("Omschrijving", ""),
+            "subject": item.get("Vak"),
+            "deadline": item.get("InleverenVoor"),
+            "submitted_at": item.get("IngeleverdOp"),
+            "grade": item.get("Beoordeling"),
+            "graded_at": item.get("BeoordeeldOp"),
+            "status": item.get("StatusLaatsteOpdrachtVersie", 0),
+            "version": item.get("LaatsteOpdrachtVersienummer", 0),
+            "can_resubmit": item.get("OpnieuwInleveren", False),
+            "is_closed": item.get("Afgesloten", False),
+            "can_submit": item.get("MagInleveren", True),
+            "attachments": bijlagen,
+            "is_submitted": item.get("IngeleverdOp") is not None,
+            "is_graded": item.get("BeoordeeldOp") is not None,
+        }

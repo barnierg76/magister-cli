@@ -978,6 +978,179 @@ async def refresh_authentication(
 
 
 # -----------------------------------------------------------------------------
+# Study Materials Tools
+# -----------------------------------------------------------------------------
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_study_guides(
+    school_code: str,
+) -> dict:
+    """
+    Get all study guides (studiewijzers) for the student.
+
+    Study guides contain learning objectives, materials, and deadlines
+    organized by subject or topic.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        List of study guides with:
+        - Title and date range
+        - Subject codes
+        - Visibility status
+    """
+    async with MagisterAsyncService(school_code) as service:
+        guides = await service.get_study_guides()
+
+        return {
+            "success": True,
+            "study_guides": guides,
+            "total": len(guides),
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_study_guide_details(
+    school_code: str,
+    guide_id: int,
+) -> dict:
+    """
+    Get full details of a study guide including all sections and resources.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        guide_id: The ID of the study guide to retrieve
+
+    Returns:
+        Full study guide with:
+        - Title and date range
+        - Sections (onderdelen) with descriptions
+        - Resources/attachments per section
+    """
+    async with MagisterAsyncService(school_code) as service:
+        guide = await service.get_study_guide(guide_id)
+
+        return {
+            "success": True,
+            "study_guide": guide,
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_learning_materials(
+    school_code: str,
+) -> dict:
+    """
+    Get all digital learning materials (textbooks, online resources).
+
+    Returns the list of digital materials (like textbooks and online learning
+    platforms) that the student has access to.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        List of learning materials with:
+        - Title and publisher
+        - EAN/ISBN number
+        - Subject information
+        - Access dates
+    """
+    async with MagisterAsyncService(school_code) as service:
+        materials = await service.get_learning_materials()
+
+        return {
+            "success": True,
+            "learning_materials": materials,
+            "total": len(materials),
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_assignments(
+    school_code: str,
+    open_only: bool = False,
+) -> dict:
+    """
+    Get ELO assignments that students can submit.
+
+    These are digital assignments that require submission through the
+    Magister ELO (Electronic Learning Environment).
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        open_only: If True, only return assignments that haven't been submitted yet
+
+    Returns:
+        List of assignments with:
+        - Title and description
+        - Subject and deadline
+        - Submission status
+        - Grade (if graded)
+        - Attachments
+    """
+    async with MagisterAsyncService(school_code) as service:
+        assignments = await service.get_assignments()
+
+        if open_only:
+            assignments = [
+                a for a in assignments
+                if not a.get("is_submitted") and not a.get("is_closed")
+            ]
+
+        # Count statistics
+        submitted = sum(1 for a in assignments if a.get("is_submitted"))
+        graded = sum(1 for a in assignments if a.get("is_graded"))
+        open_count = sum(1 for a in assignments if not a.get("is_submitted") and not a.get("is_closed"))
+
+        return {
+            "success": True,
+            "assignments": assignments,
+            "total": len(assignments),
+            "statistics": {
+                "submitted": submitted,
+                "graded": graded,
+                "open": open_count,
+            },
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_assignment_details(
+    school_code: str,
+    assignment_id: int,
+) -> dict:
+    """
+    Get full details of a single ELO assignment.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        assignment_id: The ID of the assignment to retrieve
+
+    Returns:
+        Full assignment details with:
+        - Title and full description
+        - Subject and deadline
+        - Submission status and grade
+        - All attachments
+    """
+    async with MagisterAsyncService(school_code) as service:
+        assignment = await service.get_assignment(assignment_id)
+
+        return {
+            "success": True,
+            "assignment": assignment,
+        }
+
+
+# -----------------------------------------------------------------------------
 # MCP Resources - Dynamic context for prompts
 # -----------------------------------------------------------------------------
 
