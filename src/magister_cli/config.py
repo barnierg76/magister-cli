@@ -98,6 +98,16 @@ class Settings(BaseSettings):
         le=600,
         description="Timeout for OAuth flow in seconds",
     )
+    mcp_auth_timeout: int = Field(
+        default=300,
+        ge=60,
+        le=600,
+        description="Timeout for MCP browser authentication in seconds",
+    )
+    mcp_auto_browser_auth: bool = Field(
+        default=True,
+        description="Allow MCP server to launch browser for authentication",
+    )
 
     @field_validator("cache_dir", mode="after")
     @classmethod

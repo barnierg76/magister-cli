@@ -723,23 +723,38 @@ async def check_auth_status(
         - student_name: Name if authenticated
         - expires_at: Token expiration time
         - school: School code
+        - needs_refresh: True if token expires within 15 minutes
+        - can_browser_auth: True if GUI is available for browser auth
     """
     from magister_cli.auth import get_current_token
+    from magister_cli.auth.async_browser_auth import is_gui_available
+    from magister_cli.auth.token_manager import get_token_manager
 
     try:
         validated_school = validate_school_code(school_code)
         token = get_current_token(validated_school)
+        can_browser = is_gui_available()
 
         if token is None:
             return {
                 "success": True,
                 "is_authenticated": False,
                 "school": validated_school,
+                "can_browser_auth": can_browser,
                 "resolution": {
                     "action": "login_required",
-                    "user_instruction": f"Run: magister login --school {validated_school}",
+                    "user_instruction": (
+                        "Use the 'authenticate' tool to open a browser for login"
+                        if can_browser
+                        else f"Run: magister login --school {validated_school}"
+                    ),
                 },
             }
+
+        # Check if token needs refresh soon
+        token_manager = get_token_manager(validated_school)
+        needs_refresh = token_manager.is_token_expiring_soon(minutes=15)
+        time_until_expiry = token_manager.get_time_until_expiry()
 
         return {
             "success": True,
@@ -747,6 +762,13 @@ async def check_auth_status(
             "school": validated_school,
             "student_name": token.person_name,
             "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+            "needs_refresh": needs_refresh,
+            "minutes_until_expiry": (
+                int(time_until_expiry.total_seconds() / 60)
+                if time_until_expiry
+                else None
+            ),
+            "can_browser_auth": can_browser,
         }
     except ValueError as e:
         return {
@@ -760,6 +782,198 @@ async def check_auth_status(
             "success": False,
             "error_type": "internal_error",
             "message": "Failed to check auth status",
+        }
+
+
+@mcp.tool()
+async def authenticate(
+    school_code: str,
+    timeout_seconds: int = 300,
+) -> dict:
+    """
+    Launch browser authentication for Magister.
+
+    Opens a browser window for the user to complete login to Magister.
+    The user must complete the login in the browser window that opens.
+    Once login is complete, the token is automatically stored.
+
+    This tool requires a GUI environment (desktop with display).
+    If no GUI is available, it will return instructions for CLI login.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        timeout_seconds: Maximum time to wait for login (default: 300, max: 600)
+
+    Returns:
+        Authentication result with:
+        - success: True if authenticated
+        - student_name: Name of authenticated student
+        - expires_at: When the token expires
+        - school: School code used
+    """
+    from magister_cli.auth.async_browser_auth import async_login, is_gui_available
+
+    try:
+        validated_school = validate_school_code(school_code)
+
+        # Check if GUI is available
+        if not is_gui_available():
+            return {
+                "success": False,
+                "error_type": "no_gui",
+                "message": "No GUI environment available for browser authentication",
+                "resolution": {
+                    "action": "use_cli",
+                    "user_instruction": f"Run in terminal: magister login --school {validated_school}",
+                },
+            }
+
+        # Clamp timeout to reasonable bounds
+        timeout = max(60, min(timeout_seconds, 600))
+
+        # Perform browser authentication
+        token_data = await async_login(
+            school=validated_school,
+            headless=False,  # Must be visible for user to interact
+            timeout_seconds=timeout,
+        )
+
+        return {
+            "success": True,
+            "message": "Authentication successful",
+            "school": validated_school,
+            "student_name": token_data.person_name,
+            "expires_at": (
+                token_data.expires_at.isoformat() if token_data.expires_at else None
+            ),
+        }
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error_type": "validation_error",
+            "message": str(e),
+        }
+    except RuntimeError as e:
+        error_msg = str(e)
+        return {
+            "success": False,
+            "error_type": "auth_error",
+            "message": error_msg,
+            "resolution": {
+                "action": "retry_or_cli",
+                "user_instruction": (
+                    "Try again or run in terminal: "
+                    f"magister login --school {school_code}"
+                ),
+            },
+        }
+    except Exception as e:
+        logger.exception("Failed to authenticate")
+        return {
+            "success": False,
+            "error_type": "internal_error",
+            "message": "An unexpected error occurred during authentication",
+        }
+
+
+@mcp.tool()
+async def refresh_authentication(
+    school_code: str,
+    timeout_seconds: int = 300,
+) -> dict:
+    """
+    Refresh authentication token if it's expiring soon.
+
+    Checks if the current token is expiring within 15 minutes and
+    launches browser re-authentication if needed. If the token is
+    still valid, returns the current status without re-authenticating.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        timeout_seconds: Maximum time to wait for login (default: 300)
+
+    Returns:
+        Refresh result with:
+        - success: True if token is valid (refreshed or still good)
+        - refreshed: True if re-authentication was performed
+        - expires_at: New token expiration time
+    """
+    from magister_cli.auth import get_current_token
+    from magister_cli.auth.async_browser_auth import async_login, is_gui_available
+    from magister_cli.auth.token_manager import get_token_manager
+
+    try:
+        validated_school = validate_school_code(school_code)
+        token_manager = get_token_manager(validated_school)
+        token = get_current_token(validated_school)
+
+        # Check if we need to refresh
+        if token and not token_manager.is_token_expiring_soon(minutes=15):
+            time_remaining = token_manager.get_time_until_expiry()
+            return {
+                "success": True,
+                "refreshed": False,
+                "message": "Token is still valid, no refresh needed",
+                "school": validated_school,
+                "student_name": token.person_name,
+                "expires_at": (
+                    token.expires_at.isoformat() if token.expires_at else None
+                ),
+                "minutes_until_expiry": (
+                    int(time_remaining.total_seconds() / 60) if time_remaining else None
+                ),
+            }
+
+        # Need to refresh - check GUI availability
+        if not is_gui_available():
+            return {
+                "success": False,
+                "error_type": "no_gui",
+                "message": "Token needs refresh but no GUI available",
+                "resolution": {
+                    "action": "use_cli",
+                    "user_instruction": f"Run in terminal: magister login --school {validated_school}",
+                },
+            }
+
+        # Perform browser re-authentication
+        timeout = max(60, min(timeout_seconds, 600))
+        token_data = await async_login(
+            school=validated_school,
+            headless=False,
+            timeout_seconds=timeout,
+        )
+
+        return {
+            "success": True,
+            "refreshed": True,
+            "message": "Token refreshed successfully",
+            "school": validated_school,
+            "student_name": token_data.person_name,
+            "expires_at": (
+                token_data.expires_at.isoformat() if token_data.expires_at else None
+            ),
+        }
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error_type": "validation_error",
+            "message": str(e),
+        }
+    except RuntimeError as e:
+        return {
+            "success": False,
+            "error_type": "auth_error",
+            "message": str(e),
+        }
+    except Exception as e:
+        logger.exception("Failed to refresh authentication")
+        return {
+            "success": False,
+            "error_type": "internal_error",
+            "message": "An unexpected error occurred",
         }
 
 
