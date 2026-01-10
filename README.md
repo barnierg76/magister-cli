@@ -27,7 +27,7 @@ A command-line tool for retrieving data from Magister, the Dutch student trackin
 
 ```bash
 # Clone the repository
-git clone https://github.com/barnierg76/magister-cli.git
+git clone https://github.com/your-username/magister-cli.git
 cd magister-cli
 
 # Create virtual environment and install (recommended)
@@ -46,7 +46,7 @@ playwright install chromium
 
 ```bash
 # 1. Login to your school
-magister login --school vsvonh
+magister login --school jouwschool
 
 # 2. View homework for the next 7 days
 magister homework
@@ -79,13 +79,13 @@ magister login --school <schoolcode>
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--school` | `-s` | School code (e.g., `vsvonh`) |
+| `--school` | `-s` | School code (e.g., `jouwschool`) |
 | `--headless/--no-headless` | | Run browser in headless mode |
 
 **Examples:**
 ```bash
-magister login --school vsvonh
-magister login --school vsvonh --headless
+magister login --school jouwschool
+magister login --school jouwschool --headless
 ```
 
 #### `magister logout`
@@ -713,7 +713,7 @@ magister config set <key> <value>
 
 | Key | Type | Description | Example |
 |-----|------|-------------|---------|
-| `school` | string | Default school code | `vsvonh` |
+| `school` | string | Default school code | `jouwschool` |
 | `username` | string | Username hint for login | `jan.jansen` |
 | `timeout` | int | HTTP timeout in seconds (5-120) | `30` |
 | `headless` | bool | Run browser in headless mode | `true` |
@@ -722,7 +722,7 @@ magister config set <key> <value>
 
 **Examples:**
 ```bash
-magister config set school vsvonh
+magister config set school jouwschool
 magister config set timeout 60
 magister config set headless false
 ```
@@ -866,7 +866,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ```bash
 # School code (optional, can use --school flag instead)
-export MAGISTER_SCHOOL=vsvonh
+export MAGISTER_SCHOOL=jouwschool
 
 # OAuth timeout in seconds (default: 120)
 export MAGISTER_OAUTH_TIMEOUT=180
@@ -880,7 +880,7 @@ export MAGISTER_HEADLESS=true
 Location: `~/.config/magister-cli/config.yaml`
 
 ```yaml
-school: vsvonh
+school: jouwschool
 headless: false
 timeout: 30
 oauth_timeout: 120

@@ -24,9 +24,14 @@ magister_bijlagen/
 *.swp
 *.swo
 
+# Local config files (contain personal paths)
+.mcp.json
+.claude/
+
 # Development artifacts
 plans/
 todos/
+grade_chart.py
 LEARNINGS.md
 EXAMPLES_AND_PATTERNS.md
 PREVENTION_*.md
