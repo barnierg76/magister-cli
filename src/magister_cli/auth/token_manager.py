@@ -24,16 +24,18 @@ class TokenData:
     person_id: int | None = None
     person_name: str | None = None
     expires_at: datetime | None = None
+    refresh_token: str | None = None
 
     def __repr__(self) -> str:
-        """Return string representation with redacted token."""
+        """Return string representation with redacted tokens."""
         return (
             f"TokenData("
             f"school={self.school!r}, "
             f"person_id={self.person_id}, "
             f"person_name={self.person_name!r}, "
             f"expires_at={self.expires_at!r}, "
-            f"access_token='***REDACTED***'"
+            f"access_token='***REDACTED***', "
+            f"refresh_token={'***REDACTED***' if self.refresh_token else None}"
             f")"
         )
 
@@ -47,6 +49,10 @@ class TokenData:
             return False
         return datetime.now() >= (self.expires_at - timedelta(minutes=5))
 
+    def has_refresh_token(self) -> bool:
+        """Check if a refresh token is available."""
+        return self.refresh_token is not None and len(self.refresh_token) > 0
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -55,6 +61,7 @@ class TokenData:
             "person_id": self.person_id,
             "person_name": self.person_name,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "refresh_token": self.refresh_token,
         }
 
     @classmethod
@@ -69,6 +76,7 @@ class TokenData:
             person_id=data.get("person_id"),
             person_name=data.get("person_name"),
             expires_at=expires_at,
+            refresh_token=data.get("refresh_token"),
         )
 
 
@@ -172,6 +180,18 @@ class TokenManager:
             token.person_id = person_id
             token.person_name = person_name
             self.save_token(token)
+
+    def has_refresh_token(self) -> bool:
+        """Check if a refresh token is available."""
+        token = self.get_token()
+        return token is not None and token.has_refresh_token()
+
+    def get_refresh_token(self) -> str | None:
+        """Get the refresh token if available."""
+        token = self.get_token()
+        if token and token.has_refresh_token():
+            return token.refresh_token
+        return None
 
 
 def get_token_manager(school: str | None = None) -> TokenManager:

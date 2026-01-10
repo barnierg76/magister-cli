@@ -7,6 +7,11 @@ from magister_cli.auth.async_browser_auth import (
     is_gui_available,
     AsyncBrowserAuthenticator,
 )
+from magister_cli.auth.token_refresh import (
+    refresh_access_token,
+    refresh_access_token_sync,
+    auto_refresh_if_needed,
+)
 
 __all__ = [
     "TokenData",
@@ -18,4 +23,7 @@ __all__ = [
     "async_login",
     "is_gui_available",
     "AsyncBrowserAuthenticator",
+    "refresh_access_token",
+    "refresh_access_token_sync",
+    "auto_refresh_if_needed",
 ]
