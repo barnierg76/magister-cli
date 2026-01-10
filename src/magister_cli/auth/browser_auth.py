@@ -8,104 +8,24 @@ The browser data (cookies, localStorage) is stored in:
   ~/.config/magister-cli/browser_data/{school}/
 """
 
-import html
-import json
 import logging
-import socket
-import threading
 from datetime import datetime, timedelta
-from http.server import BaseHTTPRequestHandler
-from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
-from playwright.sync_api import Page, Response, sync_playwright
+from playwright.sync_api import Page, sync_playwright
 
+from magister_cli.auth.constants import (
+    OIDC_TOKEN_EXTRACTION_JS,
+    PAGE_LOAD_DELAY_MS,
+    auth_file_lock,
+    clear_browser_data,
+    get_browser_data_dir,
+    get_storage_state_path,
+    secure_storage_state_file,
+)
 from magister_cli.auth.token_manager import TokenData, get_token_manager
 from magister_cli.config import get_settings, validate_school_code
 
 logger = logging.getLogger(__name__)
-
-
-class OAuthCallbackHandler(BaseHTTPRequestHandler):
-    """Handle OAuth callback requests."""
-
-    token: str | None = None
-    error: str | None = None
-    received = threading.Event()
-
-    def do_GET(self):
-        """Handle GET request with OAuth callback."""
-        parsed = urlparse(self.path)
-        params = parse_qs(parsed.query)
-
-        if "access_token" in params:
-            OAuthCallbackHandler.token = params["access_token"][0]
-            self._send_success_response()
-        elif "error" in params:
-            OAuthCallbackHandler.error = params.get("error_description", ["Unknown error"])[0]
-            self._send_error_response(OAuthCallbackHandler.error)
-        else:
-            self._send_error_response("No token in callback")
-
-        OAuthCallbackHandler.received.set()
-
-    def _send_success_response(self):
-        """Send success HTML response."""
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
-        self.end_headers()
-        response_html = """
-        <!DOCTYPE html>
-        <html>
-        <head><title>Magister CLI - Login Successful</title></head>
-        <body style="font-family: system-ui; text-align: center; padding: 50px;">
-            <h1>Login Successful!</h1>
-            <p>You can close this window and return to the terminal.</p>
-        </body>
-        </html>
-        """
-        self.wfile.write(response_html.encode())
-
-    def _send_error_response(self, error: str):
-        """Send error HTML response."""
-        self.send_response(400)
-        self.send_header("Content-type", "text/html")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
-        self.end_headers()
-        # Escape error message to prevent XSS
-        safe_error = html.escape(error)
-        response_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Magister CLI - Login Failed</title></head>
-        <body style="font-family: system-ui; text-align: center; padding: 50px;">
-            <h1>Login Failed</h1>
-            <p>Error: {safe_error}</p>
-            <p>Please close this window and try again.</p>
-        </body>
-        </html>
-        """
-        self.wfile.write(response_html.encode())
-
-    def log_message(self, format, *args):
-        """Suppress HTTP server logging."""
-        pass
-
-
-def find_available_port(start_port: int, max_attempts: int = 3) -> int:
-    """Find an available port starting from start_port."""
-    for offset in range(max_attempts):
-        port = start_port + offset
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("localhost", port))
-                return port
-        except OSError:
-            continue
-    raise RuntimeError(f"No available port found in range {start_port}-{start_port + max_attempts}")
 
 
 def extract_token_from_page(page: Page) -> dict | None:
@@ -118,133 +38,11 @@ def extract_token_from_page(page: Page) -> dict | None:
         Dictionary with 'access_token' and optionally 'refresh_token', or None if not found.
     """
     try:
-        result = page.evaluate(
-            """() => {
-            // First check for OIDC user storage (Magister's primary token storage)
-            // Keys look like: oidc.user:https://accounts.magister.net:M6LOAPP
-            for (let i = 0; i < sessionStorage.length; i++) {
-                const key = sessionStorage.key(i);
-                if (key && key.startsWith('oidc.user:')) {
-                    const value = sessionStorage.getItem(key);
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null,
-                                id_token: parsed.id_token || null
-                            };
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse OIDC user data:', e);
-                    }
-                }
-            }
-
-            // Also check localStorage for OIDC data
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('oidc.user:')) {
-                    const value = localStorage.getItem(key);
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null,
-                                id_token: parsed.id_token || null
-                            };
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse OIDC user data:', e);
-                    }
-                }
-            }
-
-            // Fallback: Check for any key containing access_token
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                const value = localStorage.getItem(key);
-                if (value && value.includes('access_token')) {
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null
-                            };
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            // Check sessionStorage as last fallback
-            for (let i = 0; i < sessionStorage.length; i++) {
-                const key = sessionStorage.key(i);
-                const value = sessionStorage.getItem(key);
-                if (value && value.includes('access_token')) {
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null
-                            };
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            return null;
-        }"""
-        )
+        result = page.evaluate(OIDC_TOKEN_EXTRACTION_JS)
         return result
     except Exception as e:
         logger.warning(f"Failed to extract token from page: {e}")
         return None
-
-
-def debug_storage(page: Page) -> dict:
-    """Debug helper to dump all storage contents."""
-    try:
-        return page.evaluate(
-            """() => {
-            const result = {
-                localStorage: {},
-                sessionStorage: {}
-            };
-
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                result.localStorage[key] = localStorage.getItem(key);
-            }
-
-            for (let i = 0; i < sessionStorage.length; i++) {
-                const key = sessionStorage.key(i);
-                result.sessionStorage[key] = sessionStorage.getItem(key);
-            }
-
-            return result;
-        }"""
-        )
-    except Exception:
-        return {}
-
-
-def get_browser_data_dir(school: str) -> Path:
-    """Get browser data directory for persistent sessions."""
-    config_dir = Path.home() / ".config" / "magister-cli" / "browser_data" / school
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir
-
-
-def get_storage_state_path(school: str) -> Path:
-    """Get path for storing browser storage state (cookies + localStorage)."""
-    return get_browser_data_dir(school) / "storage_state.json"
 
 
 class BrowserAuthenticator:
@@ -265,42 +63,28 @@ class BrowserAuthenticator:
         """
         Open browser for user to authenticate and capture the token.
 
-        Uses storage state to maintain sessions across CLI runs.
+        Uses persistent context to maintain sessions across CLI runs.
         On subsequent runs with valid session, login completes automatically.
 
         Returns TokenData with access token on success.
         Raises RuntimeError on failure.
+        Raises TimeoutError if another process is already authenticating.
         """
         user_data_dir = get_browser_data_dir(self.school)
         storage_state_path = get_storage_state_path(self.school)
 
-        with sync_playwright() as p:
-            # Use persistent context with storage state for session persistence
-            context_options = {
-                "user_data_dir": str(user_data_dir),
-                "headless": self.headless,
-            }
-
-            context = p.chromium.launch_persistent_context(**context_options)
+        # Use file lock to prevent concurrent authentication attempts
+        with auth_file_lock(self.school), sync_playwright() as p:
+            # Use persistent context for session persistence
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=str(user_data_dir),
+                headless=self.headless,
+            )
             page = context.pages[0] if context.pages else context.new_page()
 
             try:
-                # Restore storage state if it exists (for localStorage/sessionStorage)
-                if storage_state_path.exists():
-                    try:
-                        import json
-                        with open(storage_state_path) as f:
-                            state = json.load(f)
-                        # Add cookies from storage state
-                        if state.get("cookies"):
-                            context.add_cookies(state["cookies"])
-                        logger.debug("Restored storage state from previous session")
-                    except Exception as e:
-                        logger.debug(f"Could not restore storage state: {e}")
-
                 page.goto(self.login_url)
-
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(PAGE_LOAD_DELAY_MS)
 
                 dashboard_patterns = [
                     f"https://{self.school}.magister.net/magister",
@@ -320,7 +104,7 @@ class BrowserAuthenticator:
                     timeout=timeout,
                 )
 
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(PAGE_LOAD_DELAY_MS)
 
                 token_data = extract_token_from_page(page)
                 access_token = None
@@ -351,10 +135,6 @@ class BrowserAuthenticator:
                             break
 
                 if not access_token:
-                    # Debug: log what's in storage
-                    storage = debug_storage(page)
-                    logger.debug(f"Storage keys: localStorage={list(storage.get('localStorage', {}).keys())}, "
-                                f"sessionStorage={list(storage.get('sessionStorage', {}).keys())}")
                     raise RuntimeError(
                         "Could not extract access token. "
                         "Please ensure you completed the login process."
@@ -364,10 +144,11 @@ class BrowserAuthenticator:
                 if expires_at is None:
                     expires_at = datetime.now() + timedelta(hours=2)
 
-                # Save storage state for future sessions (cookies from all domains)
+                # Save storage state for future sessions with secure permissions
                 try:
                     context.storage_state(path=str(storage_state_path))
-                    logger.debug(f"Saved storage state to {storage_state_path}")
+                    secure_storage_state_file(storage_state_path)
+                    logger.debug(f"Saved storage state to {storage_state_path.name}")
                 except Exception as e:
                     logger.warning(f"Could not save storage state: {e}")
 
@@ -407,16 +188,30 @@ def login(school: str, headless: bool | None = None) -> TokenData:
 
 def logout(school: str | None = None) -> bool:
     """
-    Remove stored token for the school.
+    Remove stored token and browser session data for the school.
+
+    Clears:
+    - Token from system keyring
+    - Browser persistent context data
+    - Storage state file (cookies)
 
     Args:
         school: School code (None uses config default)
 
     Returns:
-        True if token was deleted, False if no token existed
+        True if any data was deleted, False if nothing existed
     """
+    settings = get_settings()
+    school = validate_school_code(school or settings.school)
+
+    # Clear keyring token
     token_manager = get_token_manager(school)
-    return token_manager.delete_token()
+    token_deleted = token_manager.delete_token()
+
+    # Clear browser session data
+    browser_data_cleared = clear_browser_data(school)
+
+    return token_deleted or browser_data_cleared
 
 
 def get_current_token(school: str | None = None) -> TokenData | None:

@@ -755,6 +755,7 @@ async def check_auth_status(
         token_manager = get_token_manager(validated_school)
         needs_refresh = token_manager.is_token_expiring_soon(minutes=15)
         time_until_expiry = token_manager.get_time_until_expiry()
+        has_refresh_token = token_manager.has_refresh_token()
 
         return {
             "success": True,
@@ -769,6 +770,8 @@ async def check_auth_status(
                 else None
             ),
             "can_browser_auth": can_browser,
+            "has_refresh_token": has_refresh_token,
+            "can_silent_refresh": has_refresh_token,
         }
     except ValueError as e:
         return {
@@ -878,28 +881,106 @@ async def authenticate(
 
 
 @mcp.tool()
+async def refresh_token(
+    school_code: str,
+) -> dict:
+    """
+    Refresh the access token using the stored refresh token.
+
+    This silently refreshes the access token without requiring browser interaction.
+    Only works if a refresh token was captured during the initial login.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        Refresh result with:
+        - success: True if token was refreshed
+        - expires_at: New token expiration time
+        - has_refresh_token: Whether refresh token is available for future refreshes
+    """
+    from magister_cli.auth import refresh_access_token
+    from magister_cli.auth.token_manager import get_token_manager
+
+    try:
+        validated_school = validate_school_code(school_code)
+        token_manager = get_token_manager(validated_school)
+
+        # Check if we have a refresh token
+        if not token_manager.has_refresh_token():
+            return {
+                "success": False,
+                "error_type": "no_refresh_token",
+                "message": "No refresh token available",
+                "resolution": {
+                    "action": "login_required",
+                    "user_instruction": f"Run: magister login --school {validated_school}",
+                },
+            }
+
+        # Perform token refresh
+        new_token = await refresh_access_token(validated_school)
+
+        return {
+            "success": True,
+            "message": "Token refreshed successfully",
+            "school": validated_school,
+            "student_name": new_token.person_name,
+            "expires_at": (
+                new_token.expires_at.isoformat() if new_token.expires_at else None
+            ),
+            "has_refresh_token": new_token.has_refresh_token(),
+        }
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error_type": "validation_error",
+            "message": str(e),
+        }
+    except RuntimeError as e:
+        error_msg = str(e)
+        return {
+            "success": False,
+            "error_type": "refresh_failed",
+            "message": error_msg,
+            "resolution": {
+                "action": "login_required",
+                "user_instruction": f"Refresh failed. Run: magister login --school {school_code}",
+            },
+        }
+    except Exception as e:
+        logger.exception("Failed to refresh token")
+        return {
+            "success": False,
+            "error_type": "internal_error",
+            "message": "An unexpected error occurred",
+        }
+
+
+@mcp.tool()
 async def refresh_authentication(
     school_code: str,
     timeout_seconds: int = 300,
 ) -> dict:
     """
-    Refresh authentication token if it's expiring soon.
+    Refresh authentication - tries silent refresh first, falls back to browser.
 
-    Checks if the current token is expiring within 15 minutes and
-    launches browser re-authentication if needed. If the token is
-    still valid, returns the current status without re-authenticating.
+    First attempts to refresh using the stored refresh token (silent, no browser).
+    If that fails or no refresh token is available, falls back to browser authentication.
 
     Args:
         school_code: The Magister school code (e.g., 'vsvonh')
-        timeout_seconds: Maximum time to wait for login (default: 300)
+        timeout_seconds: Maximum time to wait for browser login if needed (default: 300)
 
     Returns:
         Refresh result with:
         - success: True if token is valid (refreshed or still good)
-        - refreshed: True if re-authentication was performed
+        - refreshed: True if token was refreshed
+        - method: 'none', 'refresh_token', or 'browser'
         - expires_at: New token expiration time
     """
-    from magister_cli.auth import get_current_token
+    from magister_cli.auth import get_current_token, refresh_access_token
     from magister_cli.auth.async_browser_auth import async_login, is_gui_available
     from magister_cli.auth.token_manager import get_token_manager
 
@@ -914,6 +995,7 @@ async def refresh_authentication(
             return {
                 "success": True,
                 "refreshed": False,
+                "method": "none",
                 "message": "Token is still valid, no refresh needed",
                 "school": validated_school,
                 "student_name": token.person_name,
@@ -923,14 +1005,35 @@ async def refresh_authentication(
                 "minutes_until_expiry": (
                     int(time_remaining.total_seconds() / 60) if time_remaining else None
                 ),
+                "has_refresh_token": token.has_refresh_token(),
             }
 
-        # Need to refresh - check GUI availability
+        # Try silent refresh first if we have a refresh token
+        if token_manager.has_refresh_token():
+            try:
+                new_token = await refresh_access_token(validated_school)
+                return {
+                    "success": True,
+                    "refreshed": True,
+                    "method": "refresh_token",
+                    "message": "Token refreshed silently using refresh token",
+                    "school": validated_school,
+                    "student_name": new_token.person_name,
+                    "expires_at": (
+                        new_token.expires_at.isoformat() if new_token.expires_at else None
+                    ),
+                    "has_refresh_token": new_token.has_refresh_token(),
+                }
+            except RuntimeError as e:
+                logger.warning(f"Silent refresh failed, trying browser: {e}")
+                # Fall through to browser auth
+
+        # Need browser auth - check GUI availability
         if not is_gui_available():
             return {
                 "success": False,
                 "error_type": "no_gui",
-                "message": "Token needs refresh but no GUI available",
+                "message": "Token needs refresh but no GUI available and no valid refresh token",
                 "resolution": {
                     "action": "use_cli",
                     "user_instruction": f"Run in terminal: magister login --school {validated_school}",
@@ -948,12 +1051,14 @@ async def refresh_authentication(
         return {
             "success": True,
             "refreshed": True,
-            "message": "Token refreshed successfully",
+            "method": "browser",
+            "message": "Token refreshed via browser authentication",
             "school": validated_school,
             "student_name": token_data.person_name,
             "expires_at": (
                 token_data.expires_at.isoformat() if token_data.expires_at else None
             ),
+            "has_refresh_token": token_data.has_refresh_token(),
         }
 
     except ValueError as e:

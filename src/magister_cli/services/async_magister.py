@@ -5,14 +5,18 @@ Use MagisterSyncService for backward compatibility with sync code.
 """
 
 import asyncio
+import logging
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List, Optional
 
 import httpx
 
-from magister_cli.auth import get_current_token
+from magister_cli.auth import get_current_token, auto_refresh_if_needed
 from magister_cli.config import validate_school_code
+
+logger = logging.getLogger(__name__)
+
 from magister_cli.services.core import (
     AttachmentInfo,
     GradeInfo,
@@ -60,7 +64,16 @@ class MagisterAsyncService:
         return f"https://{self.school}.magister.net/api"
 
     async def __aenter__(self) -> "MagisterAsyncService":
-        """Initialize async HTTP client and authenticate."""
+        """Initialize async HTTP client and authenticate.
+
+        Automatically refreshes the token if it's expiring within 15 minutes
+        and a refresh token is available.
+        """
+        # Try to auto-refresh if token is expiring soon
+        refreshed_token = await auto_refresh_if_needed(self.school, minutes_threshold=15)
+        if refreshed_token:
+            logger.info(f"Token auto-refreshed for {self.school}")
+
         token_data = get_current_token(self.school)
         if token_data is None:
             raise RuntimeError(

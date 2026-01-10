@@ -16,24 +16,19 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 
+from magister_cli.auth.constants import (
+    OIDC_TOKEN_EXTRACTION_JS,
+    PAGE_LOAD_DELAY_MS,
+    auth_file_lock,
+    get_browser_data_dir,
+    get_storage_state_path,
+    secure_storage_state_file,
+)
 from magister_cli.auth.token_manager import TokenData, get_token_manager
 from magister_cli.config import get_settings, validate_school_code
 
 logger = logging.getLogger(__name__)
-
-
-def get_browser_data_dir(school: str) -> Path:
-    """Get browser data directory for persistent sessions."""
-    config_dir = Path.home() / ".config" / "magister-cli" / "browser_data" / school
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir
-
-
-def get_storage_state_path(school: str) -> Path:
-    """Get path for storing browser storage state (cookies + localStorage)."""
-    return get_browser_data_dir(school) / "storage_state.json"
 
 
 def is_gui_available() -> bool:
@@ -70,90 +65,7 @@ async def extract_token_from_page_async(page) -> dict | None:
         Dictionary with 'access_token' and optionally 'refresh_token', or None if not found.
     """
     try:
-        result = await page.evaluate(
-            """() => {
-            // First check for OIDC user storage (Magister's primary token storage)
-            // Keys look like: oidc.user:https://accounts.magister.net:M6LOAPP
-            for (let i = 0; i < sessionStorage.length; i++) {
-                const key = sessionStorage.key(i);
-                if (key && key.startsWith('oidc.user:')) {
-                    const value = sessionStorage.getItem(key);
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null,
-                                id_token: parsed.id_token || null
-                            };
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse OIDC user data:', e);
-                    }
-                }
-            }
-
-            // Also check localStorage for OIDC data
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('oidc.user:')) {
-                    const value = localStorage.getItem(key);
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null,
-                                id_token: parsed.id_token || null
-                            };
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse OIDC user data:', e);
-                    }
-                }
-            }
-
-            // Fallback: Check for any key containing access_token
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                const value = localStorage.getItem(key);
-                if (value && value.includes('access_token')) {
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null
-                            };
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            // Check sessionStorage as last fallback
-            for (let i = 0; i < sessionStorage.length; i++) {
-                const key = sessionStorage.key(i);
-                const value = sessionStorage.getItem(key);
-                if (value && value.includes('access_token')) {
-                    try {
-                        const parsed = JSON.parse(value);
-                        if (parsed.access_token) {
-                            return {
-                                access_token: parsed.access_token,
-                                refresh_token: parsed.refresh_token || null,
-                                expires_at: parsed.expires_at || null
-                            };
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            return null;
-        }"""
-        )
+        result = await page.evaluate(OIDC_TOKEN_EXTRACTION_JS)
         return result
     except Exception as e:
         logger.warning(f"Failed to extract token from page: {e}")
@@ -198,6 +110,7 @@ class AsyncBrowserAuthenticator:
 
         Raises:
             RuntimeError: If login fails or times out.
+            TimeoutError: If another process is already authenticating.
         """
         try:
             from playwright.async_api import async_playwright
@@ -215,119 +128,112 @@ class AsyncBrowserAuthenticator:
         user_data_dir = get_browser_data_dir(self.school)
         storage_state_path = get_storage_state_path(self.school)
 
-        async with async_playwright() as p:
-            # Use persistent context to maintain sessions across runs
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=str(user_data_dir),
-                headless=self.headless,
-            )
-            page = context.pages[0] if context.pages else await context.new_page()
-
-            try:
-                # Restore storage state if it exists (for cookies)
-                if storage_state_path.exists():
-                    try:
-                        import json
-                        with open(storage_state_path) as f:
-                            state = json.load(f)
-                        # Add cookies from storage state
-                        if state.get("cookies"):
-                            await context.add_cookies(state["cookies"])
-                        logger.debug("Restored storage state from previous session")
-                    except Exception as e:
-                        logger.debug(f"Could not restore storage state: {e}")
-
-                logger.info(f"Opening browser for login at {self.login_url}")
-                await page.goto(self.login_url)
-
-                # Wait a moment for initial page load
-                await page.wait_for_timeout(2000)
-
-                # Dashboard patterns that indicate successful login
-                dashboard_patterns = [
-                    f"https://{self.school}.magister.net/magister",
-                    f"https://{self.school}.magister.net/today",
-                    f"https://{self.school}.magister.net/#/today",
-                    f"https://{self.school}.magister.net/#/agenda",
-                ]
-
-                timeout_ms = self.timeout_seconds * 1000
-
-                # Wait for user to complete login
-                logger.info("Waiting for user to complete login...")
-                await page.wait_for_function(
-                    f"""() => {{
-                        const url = window.location.href;
-                        const patterns = {dashboard_patterns};
-                        return patterns.some(p => url.includes(p.replace('https://{self.school}.magister.net', '')));
-                    }}""",
-                    timeout=timeout_ms,
+        # Use file lock to prevent concurrent authentication attempts
+        # Note: This is a sync lock used in async context, which is acceptable
+        # since we don't want concurrent browser authentication at all
+        with auth_file_lock(self.school):
+            async with async_playwright() as p:
+                # Use persistent context to maintain sessions across runs
+                context = await p.chromium.launch_persistent_context(
+                    user_data_dir=str(user_data_dir),
+                    headless=self.headless,
                 )
+                page = context.pages[0] if context.pages else await context.new_page()
 
-                # Give the page time to store the token
-                await page.wait_for_timeout(2000)
+                try:
+                    # Note: Persistent context automatically restores cookies/localStorage
+                    # No need to manually restore storage state
 
-                # Extract the token
-                token_data = await extract_token_from_page_async(page)
-                access_token = None
-                refresh_token = None
-                expires_at = None
+                    logger.info(f"Opening browser for login at {self.login_url}")
+                    await page.goto(self.login_url)
+                    await page.wait_for_timeout(PAGE_LOAD_DELAY_MS)
 
-                if token_data:
-                    access_token = token_data.get("access_token")
-                    refresh_token = token_data.get("refresh_token")
-                    # expires_at from OIDC is Unix timestamp
-                    if token_data.get("expires_at"):
-                        try:
-                            expires_at = datetime.fromtimestamp(token_data["expires_at"])
-                        except (ValueError, TypeError):
-                            pass
+                    # Dashboard patterns that indicate successful login
+                    dashboard_patterns = [
+                        f"https://{self.school}.magister.net/magister",
+                        f"https://{self.school}.magister.net/today",
+                        f"https://{self.school}.magister.net/#/today",
+                        f"https://{self.school}.magister.net/#/agenda",
+                    ]
 
-                    if refresh_token:
-                        logger.info("Refresh token captured successfully")
-                    else:
-                        logger.debug("No refresh token (expected for implicit grant)")
+                    timeout_ms = self.timeout_seconds * 1000
 
-                if not access_token:
-                    # Try cookies as fallback
-                    cookies = await context.cookies()
-                    for cookie in cookies:
-                        if "token" in cookie["name"].lower():
-                            access_token = cookie["value"]
-                            break
-
-                if not access_token:
-                    raise RuntimeError(
-                        "Could not extract access token. "
-                        "Please ensure you completed the login process."
+                    # Wait for user to complete login
+                    logger.info("Waiting for user to complete login...")
+                    await page.wait_for_function(
+                        f"""() => {{
+                            const url = window.location.href;
+                            const patterns = {dashboard_patterns};
+                            return patterns.some(p => url.includes(p.replace('https://{self.school}.magister.net', '')));
+                        }}""",
+                        timeout=timeout_ms,
                     )
 
-                # Default expiry if not provided
-                if expires_at is None:
-                    expires_at = datetime.now() + timedelta(hours=2)
+                    # Give the page time to store the token
+                    await page.wait_for_timeout(PAGE_LOAD_DELAY_MS)
 
-                # Save storage state for future sessions (cookies from all domains)
-                try:
-                    await context.storage_state(path=str(storage_state_path))
-                    logger.debug(f"Saved storage state to {storage_state_path}")
-                except Exception as e:
-                    logger.warning(f"Could not save storage state: {e}")
+                    # Extract the token
+                    token_data = await extract_token_from_page_async(page)
+                    access_token = None
+                    refresh_token = None
+                    expires_at = None
 
-                logger.info("Authentication successful!")
-                return TokenData(
-                    access_token=access_token,
-                    school=self.school,
-                    expires_at=expires_at,
-                    refresh_token=refresh_token,
-                )
+                    if token_data:
+                        access_token = token_data.get("access_token")
+                        refresh_token = token_data.get("refresh_token")
+                        # expires_at from OIDC is Unix timestamp
+                        if token_data.get("expires_at"):
+                            try:
+                                expires_at = datetime.fromtimestamp(token_data["expires_at"])
+                            except (ValueError, TypeError):
+                                pass
 
-            except asyncio.TimeoutError:
-                raise RuntimeError(
-                    f"Login timed out after {self.timeout_seconds} seconds. "
-                    "Please try again and complete the login process."
-                )
-            finally:
-                await context.close()
+                        if refresh_token:
+                            logger.info("Refresh token captured successfully")
+                        else:
+                            logger.debug("No refresh token (expected for implicit grant)")
+
+                    if not access_token:
+                        # Try cookies as fallback
+                        cookies = await context.cookies()
+                        for cookie in cookies:
+                            if "token" in cookie["name"].lower():
+                                access_token = cookie["value"]
+                                break
+
+                    if not access_token:
+                        raise RuntimeError(
+                            "Could not extract access token. "
+                            "Please ensure you completed the login process."
+                        )
+
+                    # Default expiry if not provided
+                    if expires_at is None:
+                        expires_at = datetime.now() + timedelta(hours=2)
+
+                    # Save storage state for future sessions with secure permissions
+                    try:
+                        await context.storage_state(path=str(storage_state_path))
+                        secure_storage_state_file(storage_state_path)
+                        logger.debug(f"Saved storage state to {storage_state_path.name}")
+                    except Exception as e:
+                        logger.warning(f"Could not save storage state: {e}")
+
+                    logger.info("Authentication successful!")
+                    return TokenData(
+                        access_token=access_token,
+                        school=self.school,
+                        expires_at=expires_at,
+                        refresh_token=refresh_token,
+                    )
+
+                except asyncio.TimeoutError:
+                    raise RuntimeError(
+                        f"Login timed out after {self.timeout_seconds} seconds. "
+                        "Please try again and complete the login process."
+                    )
+                finally:
+                    await context.close()
 
 
 async def async_login(

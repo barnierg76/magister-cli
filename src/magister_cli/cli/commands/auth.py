@@ -6,7 +6,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from magister_cli.auth import get_current_token, login, logout
+from magister_cli.auth import get_current_token, login, logout, refresh_access_token_sync
 from magister_cli.auth.token_manager import get_token_manager
 from magister_cli.cli.progress import print_error, print_success, print_warning
 from magister_cli.config import get_settings
@@ -81,13 +81,22 @@ def status(
 
             if minutes_left <= 10:
                 console.print(f"Sessie verloopt over: [yellow]{time_str}[/yellow]")
-                console.print("[dim]Tip: Log opnieuw in voor een langere sessie[/dim]")
+                if token.has_refresh_token():
+                    console.print("[dim]Tip: Gebruik 'magister refresh' om sessie te verlengen[/dim]")
+                else:
+                    console.print("[dim]Tip: Log opnieuw in voor een langere sessie[/dim]")
             elif minutes_left <= 30:
                 console.print(f"Sessie verloopt over: [yellow]{time_str}[/yellow]")
             else:
                 console.print(f"Sessie verloopt over: [green]{time_str}[/green]")
 
             console.print(f"[dim]({token.expires_at.strftime('%H:%M')})[/dim]")
+
+    # Show refresh token status
+    if token.has_refresh_token():
+        console.print("[dim]Refresh token: beschikbaar (automatisch vernieuwen mogelijk)[/dim]")
+    else:
+        console.print("[dim]Refresh token: niet beschikbaar[/dim]")
 
 
 @app.command("login")
@@ -169,3 +178,69 @@ def do_logout(
         print_success("Uitgelogd.")
     else:
         print_warning("Geen token gevonden om te verwijderen.")
+
+
+@app.command("refresh")
+def do_refresh(
+    school: Annotated[
+        str | None,
+        typer.Option("--school", "-s", help="School code (e.g., vsvonh)"),
+    ] = None,
+):
+    """
+    Refresh the access token using the stored refresh token.
+
+    This silently refreshes your session without opening a browser.
+    Only works if a refresh token was captured during initial login.
+    """
+    settings = get_settings()
+    school_code = school or settings.school
+
+    if not school_code:
+        console.print("[red]Error:[/red] No school specified.")
+        console.print("\nProvide school via:")
+        console.print("  --school flag: [cyan]magister refresh --school vsvonh[/cyan]")
+        console.print("  Environment: [cyan]export MAGISTER_SCHOOL=vsvonh[/cyan]")
+        raise typer.Exit(1)
+
+    token_manager = get_token_manager(school_code)
+
+    # Check if we have a refresh token
+    if not token_manager.has_refresh_token():
+        print_warning("Geen refresh token beschikbaar.")
+        console.print("\nLog opnieuw in om een refresh token te verkrijgen:")
+        console.print(f"  [cyan]magister login --school {school_code}[/cyan]")
+        raise typer.Exit(1)
+
+    try:
+        with console.status(
+            "[bold blue]Token vernieuwen...",
+            spinner="dots",
+        ):
+            token = refresh_access_token_sync(school_code)
+
+        print_success("Token vernieuwd!")
+        console.print(f"  School: [cyan]{token.school}[/cyan]")
+
+        if token.person_name:
+            console.print(f"  Gebruiker: [bold]{token.person_name}[/bold]")
+
+        if token.expires_at:
+            remaining = token_manager.get_time_until_expiry()
+            if remaining:
+                minutes_left = int(remaining.total_seconds() / 60)
+                time_str = _format_time_remaining(minutes_left)
+                console.print(f"  Geldig voor: [green]{time_str}[/green]")
+            console.print(f"  [dim]Verloopt om: {token.expires_at.strftime('%H:%M')}[/dim]")
+
+        if token.has_refresh_token():
+            console.print("  [dim]Refresh token: beschikbaar[/dim]")
+
+    except RuntimeError as e:
+        print_error(f"Token vernieuwen mislukt: {e}")
+        console.print("\nProbeer opnieuw in te loggen:")
+        console.print(f"  [cyan]magister login --school {school_code}[/cyan]")
+        raise typer.Exit(1)
+    except Exception as e:
+        print_error(f"Onverwachte fout: {e}")
+        raise typer.Exit(1)
