@@ -37,6 +37,7 @@ app.command("logout")(auth.do_logout)
 app.command("status")(auth.status)
 
 # Add subcommand groups
+app.add_typer(auth.app, name="auth", help="Authenticatie beheren (credentials opslaan)")
 app.add_typer(messages.app, name="messages", help="Berichten beheren")
 app.add_typer(grades.app, name="grades", help="Cijfers bekijken")
 app.add_typer(schedule.app, name="schedule", help="Rooster bekijken")
