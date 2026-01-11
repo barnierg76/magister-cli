@@ -7,10 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from magister_cli.services.async_magister import (
-    MagisterAsyncService,
-    _sanitize_filename,
-)
+from magister_cli.services.async_magister import MagisterAsyncService
+from magister_cli.utils.files import sanitize_filename as _sanitize_filename
 from magister_cli.services.core import (
     AttachmentInfo,
     GradeInfo,

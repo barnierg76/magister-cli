@@ -22,7 +22,7 @@ from magister_cli.api.exceptions import (
     RateLimitError,
     TokenExpiredError,
 )
-from magister_cli.api.models import Account, Afspraak, Bijlage, Cijfer, Kind, Lesmateriaal, Opdracht, Studiewijzer
+from magister_cli.api.models import Account, Afspraak, Bijlage, Cijfer, Kind
 from magister_cli.api.resources import (
     AccountResource,
     AppointmentsResource,

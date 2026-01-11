@@ -824,7 +824,7 @@ magister --install-completion fish
 
 ## MCP Server (Claude Integration)
 
-Magister CLI includes an MCP (Model Context Protocol) server that allows Claude and other AI agents to access Magister data directly.
+Magister CLI includes an MCP (Model Context Protocol) server that allows Claude and other AI agents to access Magister data directly. The server is designed with **agent-native architecture**: agents have full parity with users and can persist context across sessions.
 
 ### Configuration in Claude Desktop
 
@@ -842,21 +842,88 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ### Available MCP Tools
 
+#### Data Access Tools
+
 | Tool | Description |
 |------|-------------|
 | `get_student_summary` | Complete daily overview (homework, grades, schedule) |
 | `get_homework` | Retrieve homework with filters |
+| `search_homework` | Search homework by text query |
 | `get_upcoming_tests` | Upcoming tests |
 | `get_recent_grades` | Recent grades with average |
+| `get_grade_overview` | Per-subject grade averages |
+| `get_grade_trends` | Identify improving/declining subjects |
+| `get_grades_by_subject` | Grades for a specific subject |
 | `get_today_schedule` | Today's schedule |
-| `download_homework_materials` | Download homework attachments |
+| `get_schedule` | Schedule for a date range |
+| `get_messages` | Read inbox messages |
+| `read_message` | Read full message content |
+| `get_study_guides` | List study guides |
+| `get_study_guide_details` | Full study guide with sections |
+| `get_assignments` | ELO assignments |
+| `get_learning_materials` | Digital textbooks and resources |
+
+#### Agent Primitives (Low-Level)
+
+| Tool | Description |
+|------|-------------|
+| `list_attachments` | List attachments from homework, messages, or study guides |
+| `download_attachment` | Download a single attachment by ID |
+| `check_notifications` | Check for new grades, schedule changes, homework |
+| `export_schedule_ical` | Export schedule to .ics file |
+| `export_homework_ical` | Export homework to .ics file |
+
+#### Context & Memory
+
+| Tool | Description |
+|------|-------------|
+| `read_context` | Read agent context file (preferences, activity, cached data) |
+| `update_context` | Update preferences, cache data, or session notes |
+| `discover_capabilities` | Discover available tools and authentication status |
+
+#### Authentication
+
+| Tool | Description |
+|------|-------------|
+| `check_auth_status` | Check if authenticated for a school |
+| `authenticate` | Launch browser authentication |
+| `refresh_token` | Silent token refresh |
+| `refresh_authentication` | Try silent refresh, fallback to browser |
+
+#### Configuration
+
+| Tool | Description |
+|------|-------------|
+| `get_config` | Get current CLI configuration |
+| `set_config` | Set a configuration value |
+
+### MCP Resources
+
+The server also exposes read-only resources:
+
+| Resource URI | Description |
+|--------------|-------------|
+| `magister://context/{school_code}` | Agent context file content |
+| `magister://capabilities` | Available capabilities |
+| `magister://status` | Authentication status for configured school |
+
+### Agent-Native Features
+
+**Context Persistence**: Agents can save preferences, cache summaries, and maintain session notes using `update_context`. Context is stored per-school in `~/.config/magister-cli/{school}/context.md`.
+
+**Capability Discovery**: The `discover_capabilities` tool lets agents understand what's available before making requests, enabling autonomous planning.
+
+**Low-Level Primitives**: Agents can compose complex operations from primitives like `list_attachments` + `download_attachment` for fine-grained control.
 
 ### Example Claude Prompts
 
 - "What homework do I have today?"
 - "What tests do I have in the next 2 weeks?"
-- "How are my grades looking?"
+- "How are my grades looking? Are there any subjects I should focus on?"
 - "Download all attachments for math"
+- "Search for homework about 'Pythagoras'"
+- "Check if I have any new grades or schedule changes"
+- "Remember that I prefer 14 days lookahead for homework"
 
 ---
 

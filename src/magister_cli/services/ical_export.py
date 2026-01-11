@@ -1,6 +1,6 @@
 """iCal export service for schedule and homework."""
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 

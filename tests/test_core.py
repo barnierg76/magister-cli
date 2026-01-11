@@ -1,6 +1,7 @@
 """Tests for MagisterCore business logic."""
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -11,7 +12,10 @@ from magister_cli.services.core import (
     HomeworkItem,
     MagisterCore,
     ScheduleItem,
+    to_dutch_time,
 )
+
+DUTCH_TZ = ZoneInfo("Europe/Amsterdam")
 
 
 class TestAttachmentInfo:
@@ -114,7 +118,8 @@ class TestHomeworkItem:
         assert result["subject"] == "Math"
         assert result["subject_abbr"] == "MAT"
         assert result["description"] == "Homework"
-        assert result["deadline"] == deadline.isoformat()
+        # to_dict converts to Dutch timezone, so compare with converted value
+        assert result["deadline"] == to_dutch_time(deadline).isoformat()
         assert result["lesson_number"] == 3
         assert result["location"] == "B202"
         assert result["teacher"] == "Mr. Smith"
@@ -271,7 +276,8 @@ class TestGradeInfo:
         assert result["subject"] == "Math"
         assert result["grade"] == "7.0"
         assert result["weight"] == 1.5
-        assert result["date"] == grade_date.isoformat()
+        # to_dict converts to Dutch timezone
+        assert result["date"] == to_dutch_time(grade_date).isoformat()
         assert result["description"] == "Test"
         assert result["is_sufficient"] is True
 
@@ -323,8 +329,9 @@ class TestScheduleItem:
         result = item.to_dict()
 
         assert isinstance(result, dict)
-        assert result["start"] == start.isoformat()
-        assert result["end"] == end.isoformat()
+        # to_dict converts to Dutch timezone
+        assert result["start"] == to_dutch_time(start).isoformat()
+        assert result["end"] == to_dutch_time(end).isoformat()
         assert result["subject"] == "Science"
         assert result["location"] == "Lab 1"
         assert result["teacher"] == "Dr. Jones"

@@ -9,7 +9,6 @@ from rich.console import Console
 from magister_cli.api import MagisterAPIError, MagisterClient
 from magister_cli.auth import get_current_token
 from magister_cli.cli.commands import auth, completion, config, export, grades, messages, notify, schedule
-from magister_cli.cli.errors import format_error
 from magister_cli.cli.formatters import (
     format_homework_list,
     format_homework_table,

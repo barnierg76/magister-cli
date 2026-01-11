@@ -4,7 +4,6 @@ from datetime import datetime
 
 from pydantic import Field
 
-from magister_cli.api.models.attachments import Bijlage
 from magister_cli.api.models.base import MagisterModel
 
 

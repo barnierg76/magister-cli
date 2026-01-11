@@ -303,6 +303,71 @@ class MagisterAsyncService:
         """Get today's schedule."""
         return await self.get_schedule(date.today())
 
+    async def get_schedule_range(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> List[ScheduleItem]:
+        """Get schedule for a date range.
+
+        Args:
+            start_date: Start date
+            end_date: End date (inclusive)
+
+        Returns:
+            List of ScheduleItem objects
+        """
+        client = self._ensure_client()
+
+        response = await client.get(
+            f"/personen/{self._person_id}/afspraken",
+            params={
+                "van": start_date.isoformat(),
+                "tot": end_date.isoformat(),
+            },
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        api_items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+        items = []
+        for item in api_items:
+            items.append(self.core.parse_schedule_from_api(item))
+
+        # Sort by start time
+        return sorted(items, key=lambda x: x.start)
+
+    async def get_raw_appointments(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> List[dict]:
+        """Get raw appointment data from the API.
+
+        This returns the raw API response for use with iCal export
+        or other advanced use cases.
+
+        Args:
+            start_date: Start date
+            end_date: End date (inclusive)
+
+        Returns:
+            List of raw appointment dictionaries from the API
+        """
+        client = self._ensure_client()
+
+        response = await client.get(
+            f"/personen/{self._person_id}/afspraken",
+            params={
+                "van": start_date.isoformat(),
+                "tot": end_date.isoformat(),
+            },
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        return data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+
     # -------------------------------------------------------------------------
     # Combined Operations (for MCP tools)
     # -------------------------------------------------------------------------
@@ -614,6 +679,16 @@ class MagisterAsyncService:
         """
         client = self._ensure_client()
         response = await client.put(f"/berichten/{message_id}/gelezen")
+        response.raise_for_status()
+
+    async def delete_message(self, message_id: int) -> None:
+        """Delete a message (moves to deleted folder).
+
+        Args:
+            message_id: The ID of the message to delete
+        """
+        client = self._ensure_client()
+        response = await client.delete(f"/berichten/{message_id}")
         response.raise_for_status()
 
     # -------------------------------------------------------------------------
