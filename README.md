@@ -11,6 +11,7 @@ A command-line tool for retrieving data from Magister, the Dutch student trackin
   - [Homework](#homework)
   - [Tests](#tests)
   - [Grades](#grades)
+  - [Attendance](#attendance)
   - [Schedule](#schedule)
   - [Messages](#messages)
   - [Download](#download)
@@ -27,7 +28,7 @@ A command-line tool for retrieving data from Magister, the Dutch student trackin
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/magister-cli.git
+git clone https://github.com/barnierg76/magister-cli.git
 cd magister-cli
 
 # Create virtual environment and install (recommended)
@@ -349,6 +350,37 @@ magister grades raw [OPTIONS]
 |--------|-------|-------------|---------|
 | `--school` | `-s` | School code | - |
 | `--limit` | `-n` | Number of grades | `10` |
+
+---
+
+### Attendance
+
+The `attendance` commands are available via MCP tools. CLI commands are planned for a future release.
+
+**MCP Tools for Attendance:**
+
+| Tool | Description |
+|------|-------------|
+| `get_absences` | Get absence records for a period |
+| `get_absences_school_year` | Get all absences for the current school year |
+| `get_absence_summary` | Get attendance statistics with totals by type |
+
+**Absence Types (Verzuimtypen):**
+
+| Type | Dutch | English |
+|------|-------|---------|
+| 1 | Ziek | Sick |
+| 2 | Te laat | Late |
+| 3 | Geoorloofd | Excused |
+| 4 | Ongeoorloofd | Unexcused |
+| 5 | Huiswerk niet in orde | Homework not in order |
+| 6 | Boeken niet in orde | Books not in order |
+| 7 | Verwijderd | Removed from class |
+
+**Example via Claude:**
+- "How many times have I been absent this year?"
+- "Show me my attendance summary"
+- "When was I last sick?"
 
 ---
 
@@ -898,6 +930,9 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 | `get_study_guide_details` | Full study guide with sections |
 | `get_assignments` | ELO assignments |
 | `get_learning_materials` | Digital textbooks and resources |
+| `get_absences` | Absence records for a period (default 30 days) |
+| `get_absences_school_year` | All absences for current school year |
+| `get_absence_summary` | Attendance statistics with totals by type |
 
 #### Agent Primitives (Low-Level)
 
@@ -1059,6 +1094,27 @@ ruff format .
 # Test MCP server
 mcp dev magister_cli/mcp/server.py
 ```
+
+### Apple Silicon (M1/M2/M3/M4)
+
+On Apple Silicon Macs, some tools like Claude Code run under Rosetta (x86_64), while your terminal runs natively (arm64). This can cause issues with compiled packages like pydantic_core.
+
+**Solution:** Use architecture-specific virtual environments:
+
+```bash
+# Create arm64 venv for native terminal
+arch -arm64 python3 -m venv .venv-arm64
+arch -arm64 .venv-arm64/bin/pip install -e ".[dev]"
+
+# Create x86_64 venv for Rosetta/Claude Code
+arch -x86_64 python3 -m venv .venv-x86_64
+arch -x86_64 .venv-x86_64/bin/pip install -e ".[dev]"
+
+# Symlink .venv to your current architecture
+ln -sf .venv-arm64 .venv  # For native terminal
+```
+
+See `docs/solutions/setup/dual-architecture-venv-setup.md` for detailed instructions.
 
 ---
 
