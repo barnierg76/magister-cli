@@ -2148,6 +2148,99 @@ async def update_context(
 # Agent-Native Tools - Discovery & Capabilities
 # -----------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# Attendance/Absence (Verzuim) Tools
+# -----------------------------------------------------------------------------
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_absences(
+    school_code: str,
+    days: int = 30,
+) -> dict:
+    """
+    Get absence/attendance records for a student.
+
+    Fetches absence records (verzuim) for the specified time period.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        days: Number of days to look back (default: 30)
+
+    Returns:
+        Absence records with:
+        - Date, time, and lesson hour
+        - Type (sick, late, excused, unexcused)
+        - Subject/teacher if applicable
+        - Status (handled/pending)
+    """
+    async with MagisterAsyncService(school_code) as service:
+        absences = await service.get_absences(days=days)
+
+        return {
+            "success": True,
+            "absences": absences,
+            "total": len(absences),
+            "period_days": days,
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_absences_school_year(
+    school_code: str,
+) -> dict:
+    """
+    Get all absences for the current school year.
+
+    Fetches all absence records from August 1 to today.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        All absence records for the school year with type information.
+    """
+    async with MagisterAsyncService(school_code) as service:
+        absences = await service.get_absences_school_year()
+
+        return {
+            "success": True,
+            "absences": absences,
+            "total": len(absences),
+        }
+
+
+@mcp.tool()
+@mcp_error_handler
+async def get_absence_summary(
+    school_code: str,
+    days: int = 365,
+) -> dict:
+    """
+    Get attendance summary statistics.
+
+    Analyzes absence records to provide totals by type.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        days: Number of days to analyze (default: 365)
+
+    Returns:
+        Summary with:
+        - Total absences
+        - Sick days count
+        - Late arrivals count
+        - Excused absences count
+        - Unexcused absences count
+    """
+    async with MagisterAsyncService(school_code) as service:
+        summary = await service.get_absence_summary(days=days)
+        summary["success"] = True
+
+        return summary
+
 
 @mcp.tool()
 @mcp_error_handler
@@ -2206,6 +2299,9 @@ async def discover_capabilities(school_code: Optional[str] = None) -> dict:
                 "get_learning_materials",
                 "get_assignments",
                 "get_assignment_details",
+                "get_absences",
+                "get_absences_school_year",
+                "get_absence_summary",
             ]
             capabilities["file_tools"] = [
                 "list_attachments",
@@ -2288,6 +2384,8 @@ def get_capabilities_resource() -> str:
 - get_grades: Recent grades and statistics
 - get_messages: Inbox messages
 - get_study_guides: Study materials
+- get_absences: Absence/attendance records
+- get_absence_summary: Attendance statistics
 
 ## Actions
 - download_attachment: Download files
