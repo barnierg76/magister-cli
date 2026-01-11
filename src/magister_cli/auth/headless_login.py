@@ -162,13 +162,10 @@ async def headless_login(school: str, timeout: int = 60) -> TokenData | None:
 
                 await _human_delay()
 
-                # Click next/continue button (Magister uses "Volgende")
-                next_button = page.locator(
-                    'button:has-text("Volgende"), button:has-text("Next"), '
-                    'button[type="submit"]:has-text("Volgende")'
-                )
+                # Click next/continue button (Magister uses "Doorgaan")
+                next_button = page.get_by_role("button", name="Doorgaan")
                 if await next_button.count() > 0:
-                    await next_button.first.click()
+                    await next_button.click()
                     logger.debug("Clicked next button")
 
                     # Wait for password field
@@ -182,13 +179,10 @@ async def headless_login(school: str, timeout: int = 60) -> TokenData | None:
 
                 await _human_delay()
 
-                # Submit login
-                submit_button = page.locator(
-                    'button[type="submit"], button:has-text("Inloggen"), '
-                    'button:has-text("Log in"), button:has-text("Aanmelden")'
-                )
+                # Submit login (Magister uses "Doorgaan" for both steps)
+                submit_button = page.get_by_role("button", name="Doorgaan")
                 if await submit_button.count() > 0:
-                    await submit_button.first.click()
+                    await submit_button.click()
                     logger.debug("Clicked submit button")
 
                 # Wait for navigation result
