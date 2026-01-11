@@ -108,6 +108,10 @@ class Settings(BaseSettings):
         default=True,
         description="Allow MCP server to launch browser for authentication",
     )
+    headless_auth: bool = Field(
+        default=False,
+        description="Enable headless auto-reauthentication using stored credentials (SECURITY RISK)",
+    )
 
     @field_validator("cache_dir", mode="after")
     @classmethod
@@ -155,3 +159,29 @@ def reset_settings() -> None:
     """Reset settings (useful for testing)."""
     global _settings
     _settings = None
+
+
+def load_config() -> dict[str, Any]:
+    """Load config from YAML file.
+
+    Returns:
+        Dictionary of config values, empty dict if file doesn't exist or is invalid.
+    """
+    if not CONFIG_PATH.exists():
+        return {}
+    try:
+        with open(CONFIG_PATH) as f:
+            return yaml.safe_load(f) or {}
+    except yaml.YAMLError:
+        return {}
+
+
+def save_config(config: dict[str, Any]) -> None:
+    """Save config to YAML file.
+
+    Args:
+        config: Dictionary of config values to save.
+    """
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_PATH, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)

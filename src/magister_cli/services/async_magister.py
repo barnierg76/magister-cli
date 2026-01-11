@@ -303,6 +303,71 @@ class MagisterAsyncService:
         """Get today's schedule."""
         return await self.get_schedule(date.today())
 
+    async def get_schedule_range(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> List[ScheduleItem]:
+        """Get schedule for a date range.
+
+        Args:
+            start_date: Start date
+            end_date: End date (inclusive)
+
+        Returns:
+            List of ScheduleItem objects
+        """
+        client = self._ensure_client()
+
+        response = await client.get(
+            f"/personen/{self._person_id}/afspraken",
+            params={
+                "van": start_date.isoformat(),
+                "tot": end_date.isoformat(),
+            },
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        api_items = data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+        items = []
+        for item in api_items:
+            items.append(self.core.parse_schedule_from_api(item))
+
+        # Sort by start time
+        return sorted(items, key=lambda x: x.start)
+
+    async def get_raw_appointments(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> List[dict]:
+        """Get raw appointment data from the API.
+
+        This returns the raw API response for use with iCal export
+        or other advanced use cases.
+
+        Args:
+            start_date: Start date
+            end_date: End date (inclusive)
+
+        Returns:
+            List of raw appointment dictionaries from the API
+        """
+        client = self._ensure_client()
+
+        response = await client.get(
+            f"/personen/{self._person_id}/afspraken",
+            params={
+                "van": start_date.isoformat(),
+                "tot": end_date.isoformat(),
+            },
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        return data.get("items", data.get("Items", [])) if isinstance(data, dict) else data
+
     # -------------------------------------------------------------------------
     # Combined Operations (for MCP tools)
     # -------------------------------------------------------------------------
@@ -616,6 +681,16 @@ class MagisterAsyncService:
         response = await client.put(f"/berichten/{message_id}/gelezen")
         response.raise_for_status()
 
+    async def delete_message(self, message_id: int) -> None:
+        """Delete a message (moves to deleted folder).
+
+        Args:
+            message_id: The ID of the message to delete
+        """
+        client = self._ensure_client()
+        response = await client.delete(f"/berichten/{message_id}")
+        response.raise_for_status()
+
     # -------------------------------------------------------------------------
     # Study Guide (Studiewijzer) Operations
     # -------------------------------------------------------------------------
@@ -839,4 +914,145 @@ class MagisterAsyncService:
             "attachments": bijlagen,
             "is_submitted": item.get("IngeleverdOp") is not None,
             "is_graded": item.get("BeoordeeldOp") is not None,
+        }
+
+    # -------------------------------------------------------------------------
+    # Attendance/Absence (Verzuim) Operations
+    # -------------------------------------------------------------------------
+
+    async def get_absences(
+        self,
+        days: int = 30,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> List[dict]:
+        """Get absence records for a date range.
+
+        Args:
+            days: Number of days to look back if start_date not specified
+            start_date: Start date (defaults to `days` days ago)
+            end_date: End date (defaults to today)
+
+        Returns:
+            List of absence record dictionaries
+        """
+        client = self._ensure_client()
+
+        if end_date is None:
+            end_date = date.today()
+        if start_date is None:
+            start_date = end_date - timedelta(days=days)
+
+        response = await client.get(
+            f"/personen/{self._person_id}/absenties",
+            params={
+                "van": start_date.isoformat(),
+                "tot": end_date.isoformat(),
+            },
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        items = data.get("Items", data.get("items", [])) if isinstance(data, dict) else data
+
+        absences = []
+        for item in items:
+            # Map verzuim type to human-readable name
+            verzuim_type = item.get("Verzuimtype", 0)
+            type_names = {
+                0: "Onbekend",
+                1: "Ziek",
+                2: "Te laat",
+                3: "Geoorloofd afwezig",
+                4: "Ongeoorloofd afwezig",
+                5: "Huiswerk niet in orde",
+                6: "Boeken niet in orde",
+                7: "Verwijderd uit les",
+            }
+
+            absences.append({
+                "id": item.get("Id"),
+                "start": item.get("Start"),
+                "end": item.get("Eind"),
+                "lesson_hour": item.get("Lesuur"),
+                "appointment_id": item.get("AfspraakId"),
+                "description": item.get("Omschrijving", ""),
+                "code": item.get("Code", ""),
+                "type": verzuim_type,
+                "type_name": type_names.get(verzuim_type, "Onbekend"),
+                "is_excused": item.get("Geoorloofd", True),
+                "is_handled": item.get("Afgehandeld", False),
+                "subject": item.get("Vak"),
+                "teacher": item.get("Docent"),
+                "location": item.get("Lokaal"),
+            })
+
+        return absences
+
+    async def get_absences_school_year(self) -> List[dict]:
+        """Get all absences for the current school year.
+
+        Returns:
+            List of absence records for the school year
+        """
+        today = date.today()
+        # School year starts August 1
+        if today.month >= 8:
+            start = date(today.year, 8, 1)
+        else:
+            start = date(today.year - 1, 8, 1)
+
+        return await self.get_absences(start_date=start, end_date=today)
+
+    async def get_absence_summary(self, days: int = 365) -> dict:
+        """Get attendance summary statistics.
+
+        Args:
+            days: Number of days to analyze
+
+        Returns:
+            Dictionary with attendance statistics
+        """
+        absences = await self.get_absences(days=days)
+
+        # Count unique days (API returns one record per lesson hour)
+        unique_days = set()
+        for a in absences:
+            if a["start"]:
+                day = a["start"][:10]  # Extract YYYY-MM-DD
+                unique_days.add(day)
+
+        # Infer type from description since Verzuimtype is often 0
+        def infer_type(absence: dict) -> str:
+            desc = (absence.get("description") or "").lower()
+            code = (absence.get("code") or "").lower()
+
+            if "ziek" in desc or code == "z":
+                return "sick"
+            elif "te laat" in desc or code == "tl":
+                return "late"
+            elif not absence.get("is_excused"):
+                return "unexcused"
+            else:
+                return "excused"
+
+        # Count by inferred type (per record, not per day)
+        totaal_records = len(absences)
+        ziek = sum(1 for a in absences if infer_type(a) == "sick")
+        te_laat = sum(1 for a in absences if infer_type(a) == "late")
+        geoorloofd = sum(1 for a in absences if infer_type(a) == "excused")
+        ongeoorloofd = sum(1 for a in absences if infer_type(a) == "unexcused")
+
+        return {
+            "total_records": totaal_records,
+            "unique_days": len(unique_days),
+            "sick_records": ziek,
+            "late_records": te_laat,
+            "excused_records": geoorloofd,
+            "unexcused_records": ongeoorloofd,
+            "period_days": days,
+            "summary": (
+                f"{len(unique_days)} dagen afwezig ({totaal_records} lesuren): "
+                f"{ziek} ziek, {te_laat} te laat, {geoorloofd} geoorloofd, {ongeoorloofd} ongeoorloofd"
+            ),
         }

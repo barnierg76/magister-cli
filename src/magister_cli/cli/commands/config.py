@@ -3,11 +3,10 @@
 from typing import Annotated
 
 import typer
-import yaml
 from rich.console import Console
 from rich.table import Table
 
-from magister_cli.config import CONFIG_PATH, Settings, get_settings
+from magister_cli.config import CONFIG_PATH, Settings, get_settings, load_config, save_config
 
 console = Console()
 app = typer.Typer(help="Configuratie beheren")
@@ -45,24 +44,6 @@ CONFIGURABLE_KEYS = {
         "example": "300",
     },
 }
-
-
-def load_config() -> dict:
-    """Load config from YAML file."""
-    if not CONFIG_PATH.exists():
-        return {}
-    try:
-        with open(CONFIG_PATH) as f:
-            return yaml.safe_load(f) or {}
-    except yaml.YAMLError:
-        return {}
-
-
-def save_config(config: dict) -> None:
-    """Save config to YAML file."""
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
 
 def parse_value(key: str, value: str) -> str | int | bool:

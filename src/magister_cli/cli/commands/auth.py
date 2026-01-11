@@ -1,15 +1,22 @@
 """Authentication CLI commands."""
 
-from datetime import datetime
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
-from magister_cli.auth import get_current_token, login, logout, refresh_access_token_sync
+from magister_cli.auth import (
+    get_current_token,
+    login,
+    logout,
+    refresh_access_token_sync,
+    store_credentials,
+    clear_credentials,
+    has_stored_credentials,
+)
 from magister_cli.auth.token_manager import get_token_manager
 from magister_cli.cli.progress import print_error, print_success, print_warning
-from magister_cli.config import get_settings
+from magister_cli.config import get_settings, load_config, save_config
 
 console = Console()
 app = typer.Typer(help="Authentication commands")
@@ -97,6 +104,12 @@ def status(
         console.print("[dim]Refresh token: beschikbaar (automatisch vernieuwen mogelijk)[/dim]")
     else:
         console.print("[dim]Refresh token: niet beschikbaar[/dim]")
+
+    # Show headless auth status
+    if has_stored_credentials(school_code):
+        console.print("[dim]Headless auth: ingeschakeld (inloggegevens opgeslagen)[/dim]")
+    else:
+        console.print("[dim]Headless auth: uitgeschakeld[/dim]")
 
 
 @app.command("login")
@@ -244,3 +257,126 @@ def do_refresh(
     except Exception as e:
         print_error(f"Onverwachte fout: {e}")
         raise typer.Exit(1)
+
+
+@app.command("store")
+def store_credentials_cmd(
+    school: Annotated[
+        str | None,
+        typer.Option("--school", "-s", help="School code (e.g., vsvonh)"),
+    ] = None,
+    username: Annotated[
+        str | None,
+        typer.Option("--username", "-u", help="Magister username"),
+    ] = None,
+):
+    """
+    Store credentials for headless auto-reauthentication.
+
+    This enables automatic re-authentication when your token expires (~2 hours)
+    without requiring a browser popup. Your credentials are stored securely
+    in the OS keyring.
+
+    WARNING: Storing credentials is a security risk. Only use this if you
+    understand and accept the implications.
+    """
+    settings = get_settings()
+    school_code = school or settings.school
+
+    if not school_code:
+        print_error("Geen school opgegeven.")
+        console.print("\nGebruik: [cyan]magister auth store --school <code> --username <user>[/cyan]")
+        raise typer.Exit(1)
+
+    # Security warning
+    console.print()
+    console.print("[bold yellow]BEVEILIGINGSWAARSCHUWING[/bold yellow]")
+    console.print()
+    console.print("Het opslaan van je wachtwoord maakt headless re-authenticatie mogelijk,")
+    console.print("maar betekent dat je inloggegevens worden opgeslagen op deze computer.")
+    console.print()
+    console.print("Je wachtwoord wordt opgeslagen in de OS keyring:")
+    console.print("  - macOS: Keychain")
+    console.print("  - Windows: Credential Manager")
+    console.print("  - Linux: GNOME Keyring / KWallet")
+    console.print()
+    console.print("[yellow]Als iemand toegang krijgt tot je computer, kunnen ze je[/yellow]")
+    console.print("[yellow]Magister-account benaderen zonder je wachtwoord te weten.[/yellow]")
+    console.print()
+
+    if not typer.confirm("Begrijp je dit en accepteer je dit risico?", default=False):
+        console.print("\n[dim]Afgebroken.[/dim]")
+        raise typer.Exit(0)
+
+    # Get username if not provided
+    if not username:
+        username = typer.prompt("\nGebruikersnaam")
+
+    # Get password
+    password = typer.prompt("Wachtwoord", hide_input=True)
+
+    if not password:
+        print_error("Wachtwoord mag niet leeg zijn.")
+        raise typer.Exit(1)
+
+    try:
+        store_credentials(school_code, username, password)
+
+        # Update config to enable headless auth
+        config = load_config()
+        config["headless_auth"] = True
+        save_config(config)
+
+        console.print()
+        print_success("Inloggegevens veilig opgeslagen!")
+        console.print()
+        console.print("Headless re-authenticatie is nu ingeschakeld.")
+        console.print("Je token wordt automatisch vernieuwd zonder browser popup.")
+        console.print()
+        console.print("[dim]Om inloggegevens te verwijderen:[/dim]")
+        console.print(f"  [cyan]magister auth clear --school {school_code}[/cyan]")
+
+    except Exception as e:
+        print_error(f"Kon inloggegevens niet opslaan: {e}")
+        raise typer.Exit(1)
+
+
+@app.command("clear")
+def clear_credentials_cmd(
+    school: Annotated[
+        str | None,
+        typer.Option("--school", "-s", help="School code (e.g., vsvonh)"),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Skip confirmation prompt"),
+    ] = False,
+):
+    """
+    Remove stored credentials for a school.
+
+    This disables headless auto-reauthentication. You'll need to log in
+    via browser when your token expires.
+    """
+    settings = get_settings()
+    school_code = school or settings.school
+
+    if not school_code:
+        print_error("Geen school opgegeven.")
+        console.print("\nGebruik: [cyan]magister auth clear --school <code>[/cyan]")
+        raise typer.Exit(1)
+
+    if not has_stored_credentials(school_code):
+        print_warning(f"Geen opgeslagen inloggegevens gevonden voor {school_code}.")
+        raise typer.Exit(0)
+
+    if not force:
+        if not typer.confirm(f"Inloggegevens verwijderen voor {school_code}?", default=True):
+            console.print("[dim]Afgebroken.[/dim]")
+            raise typer.Exit(0)
+
+    if clear_credentials(school_code):
+        print_success("Inloggegevens verwijderd.")
+        console.print("Headless re-authenticatie is nu uitgeschakeld.")
+    else:
+        print_warning("Kon inloggegevens niet verwijderen.")

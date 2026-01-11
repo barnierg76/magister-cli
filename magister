@@ -1,0 +1,4 @@
+#!/bin/bash
+# Wrapper script to run magister with ARM64 architecture
+# This is needed because the shell runs under Rosetta but packages are ARM64
+exec arch -arm64 "$(dirname "$0")/.venv/bin/magister" "$@"

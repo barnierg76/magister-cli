@@ -112,6 +112,42 @@ magister status [--school <schoolcode>]
 |--------|-------|-------------|
 | `--school` | `-s` | School code |
 
+#### `magister auth store`
+
+Store credentials for headless auto-reauthentication. This enables automatic re-authentication when your token expires (~2 hours) without requiring a browser popup.
+
+```bash
+magister auth store --school <schoolcode> [--username <username>]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code |
+| `--username` | `-u` | Magister username (prompted if not provided) |
+
+**Security Warning:** Your password will be stored in the OS keyring (macOS Keychain, Windows Credential Manager, or Linux GNOME Keyring/KWallet). Only use this if you understand and accept the security implications.
+
+**Limitation:** This does NOT work for schools that require 2FA/MFA.
+
+**Example:**
+```bash
+magister auth store --school jouwschool --username jan.jansen
+# You will be prompted for your password
+```
+
+#### `magister auth clear`
+
+Remove stored credentials to disable headless auto-reauthentication.
+
+```bash
+magister auth clear --school <schoolcode> [--force]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code |
+| `--force` | `-f` | Skip confirmation prompt |
+
 ---
 
 ### Homework
@@ -824,7 +860,7 @@ magister --install-completion fish
 
 ## MCP Server (Claude Integration)
 
-Magister CLI includes an MCP (Model Context Protocol) server that allows Claude and other AI agents to access Magister data directly.
+Magister CLI includes an MCP (Model Context Protocol) server that allows Claude and other AI agents to access Magister data directly. The server is designed with **agent-native architecture**: agents have full parity with users and can persist context across sessions.
 
 ### Configuration in Claude Desktop
 
@@ -842,21 +878,91 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ### Available MCP Tools
 
+#### Data Access Tools
+
 | Tool | Description |
 |------|-------------|
 | `get_student_summary` | Complete daily overview (homework, grades, schedule) |
 | `get_homework` | Retrieve homework with filters |
+| `search_homework` | Search homework by text query |
 | `get_upcoming_tests` | Upcoming tests |
 | `get_recent_grades` | Recent grades with average |
+| `get_grade_overview` | Per-subject grade averages |
+| `get_grade_trends` | Identify improving/declining subjects |
+| `get_grades_by_subject` | Grades for a specific subject |
 | `get_today_schedule` | Today's schedule |
-| `download_homework_materials` | Download homework attachments |
+| `get_schedule` | Schedule for a date range |
+| `get_messages` | Read inbox messages |
+| `read_message` | Read full message content |
+| `get_study_guides` | List study guides |
+| `get_study_guide_details` | Full study guide with sections |
+| `get_assignments` | ELO assignments |
+| `get_learning_materials` | Digital textbooks and resources |
+
+#### Agent Primitives (Low-Level)
+
+| Tool | Description |
+|------|-------------|
+| `list_attachments` | List attachments from homework, messages, or study guides |
+| `download_attachment` | Download a single attachment by ID |
+| `check_notifications` | Check for new grades, schedule changes, homework |
+| `export_schedule_ical` | Export schedule to .ics file |
+| `export_homework_ical` | Export homework to .ics file |
+
+#### Context & Memory
+
+| Tool | Description |
+|------|-------------|
+| `read_context` | Read agent context file (preferences, activity, cached data) |
+| `update_context` | Update preferences, cache data, or session notes |
+| `discover_capabilities` | Discover available tools and authentication status |
+
+#### Authentication
+
+| Tool | Description |
+|------|-------------|
+| `check_auth_status` | Check if authenticated for a school |
+| `authenticate` | Launch browser authentication |
+| `refresh_token` | Silent token refresh |
+| `refresh_authentication` | Try silent refresh, headless, or browser auth |
+| `store_credentials_for_headless` | Store credentials for headless auto-reauthentication |
+| `clear_stored_credentials` | Remove stored credentials |
+| `headless_reauthenticate` | Re-authenticate using stored credentials (no browser popup) |
+
+#### Configuration
+
+| Tool | Description |
+|------|-------------|
+| `get_config` | Get current CLI configuration |
+| `set_config` | Set a configuration value |
+
+### MCP Resources
+
+The server also exposes read-only resources:
+
+| Resource URI | Description |
+|--------------|-------------|
+| `magister://context/{school_code}` | Agent context file content |
+| `magister://capabilities` | Available capabilities |
+| `magister://status` | Authentication status for configured school |
+
+### Agent-Native Features
+
+**Context Persistence**: Agents can save preferences, cache summaries, and maintain session notes using `update_context`. Context is stored per-school in `~/.config/magister-cli/{school}/context.md`.
+
+**Capability Discovery**: The `discover_capabilities` tool lets agents understand what's available before making requests, enabling autonomous planning.
+
+**Low-Level Primitives**: Agents can compose complex operations from primitives like `list_attachments` + `download_attachment` for fine-grained control.
 
 ### Example Claude Prompts
 
 - "What homework do I have today?"
 - "What tests do I have in the next 2 weeks?"
-- "How are my grades looking?"
+- "How are my grades looking? Are there any subjects I should focus on?"
 - "Download all attachments for math"
+- "Search for homework about 'Pythagoras'"
+- "Check if I have any new grades or schedule changes"
+- "Remember that I prefer 14 days lookahead for homework"
 
 ---
 
@@ -884,7 +990,26 @@ school: jouwschool
 headless: false
 timeout: 30
 oauth_timeout: 120
+headless_auth: false  # Enable headless auto-reauthentication
 ```
+
+### Headless Auto-Reauthentication
+
+When enabled, the system can automatically re-authenticate when your token expires (~2 hours) without showing a browser popup. This is useful for unattended operation.
+
+**How to enable:**
+1. Run `magister auth store --school jouwschool` and enter your credentials
+2. The system will automatically use headless login when your token expires
+
+**How it works:**
+- Credentials are stored securely in the OS keyring
+- When token expires, Playwright runs a headless browser login
+- The new token is captured and stored automatically
+
+**Limitations:**
+- Does NOT work with schools that require 2FA/MFA
+- Credentials are stored on your computer (security consideration)
+- Failed logins (wrong password) automatically clear stored credentials
 
 ---
 

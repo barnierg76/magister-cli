@@ -50,6 +50,10 @@ from magister_cli.api.models.studyguides import (
     StudiewijzerOnderdelenResponse,
     StudiewijzerResponse,
 )
+from magister_cli.api.models.attendance import (
+    Absentie,
+    VerzuimType,
+)
 
 __all__ = [
     # Base
@@ -101,4 +105,7 @@ __all__ = [
     "StudiewijzerOnderdeel",
     "StudiewijzerOnderdelenResponse",
     "StudiewijzerResponse",
+    # Attendance
+    "Absentie",
+    "VerzuimType",
 ]
