@@ -112,6 +112,42 @@ magister status [--school <schoolcode>]
 |--------|-------|-------------|
 | `--school` | `-s` | School code |
 
+#### `magister auth store`
+
+Store credentials for headless auto-reauthentication. This enables automatic re-authentication when your token expires (~2 hours) without requiring a browser popup.
+
+```bash
+magister auth store --school <schoolcode> [--username <username>]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code |
+| `--username` | `-u` | Magister username (prompted if not provided) |
+
+**Security Warning:** Your password will be stored in the OS keyring (macOS Keychain, Windows Credential Manager, or Linux GNOME Keyring/KWallet). Only use this if you understand and accept the security implications.
+
+**Limitation:** This does NOT work for schools that require 2FA/MFA.
+
+**Example:**
+```bash
+magister auth store --school jouwschool --username jan.jansen
+# You will be prompted for your password
+```
+
+#### `magister auth clear`
+
+Remove stored credentials to disable headless auto-reauthentication.
+
+```bash
+magister auth clear --school <schoolcode> [--force]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--school` | `-s` | School code |
+| `--force` | `-f` | Skip confirmation prompt |
+
 ---
 
 ### Homework
@@ -888,7 +924,10 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 | `check_auth_status` | Check if authenticated for a school |
 | `authenticate` | Launch browser authentication |
 | `refresh_token` | Silent token refresh |
-| `refresh_authentication` | Try silent refresh, fallback to browser |
+| `refresh_authentication` | Try silent refresh, headless, or browser auth |
+| `store_credentials_for_headless` | Store credentials for headless auto-reauthentication |
+| `clear_stored_credentials` | Remove stored credentials |
+| `headless_reauthenticate` | Re-authenticate using stored credentials (no browser popup) |
 
 #### Configuration
 
@@ -951,7 +990,26 @@ school: jouwschool
 headless: false
 timeout: 30
 oauth_timeout: 120
+headless_auth: false  # Enable headless auto-reauthentication
 ```
+
+### Headless Auto-Reauthentication
+
+When enabled, the system can automatically re-authenticate when your token expires (~2 hours) without showing a browser popup. This is useful for unattended operation.
+
+**How to enable:**
+1. Run `magister auth store --school jouwschool` and enter your credentials
+2. The system will automatically use headless login when your token expires
+
+**How it works:**
+- Credentials are stored securely in the OS keyring
+- When token expires, Playwright runs a headless browser login
+- The new token is captured and stored automatically
+
+**Limitations:**
+- Does NOT work with schools that require 2FA/MFA
+- Credentials are stored on your computer (security consideration)
+- Failed logins (wrong password) automatically clear stored credentials
 
 ---
 

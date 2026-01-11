@@ -108,6 +108,10 @@ class Settings(BaseSettings):
         default=True,
         description="Allow MCP server to launch browser for authentication",
     )
+    headless_auth: bool = Field(
+        default=False,
+        description="Enable headless auto-reauthentication using stored credentials (SECURITY RISK)",
+    )
 
     @field_validator("cache_dir", mode="after")
     @classmethod

@@ -727,12 +727,14 @@ async def check_auth_status(
     """
     from magister_cli.auth import get_current_token
     from magister_cli.auth.async_browser_auth import is_gui_available
+    from magister_cli.auth.credential_store import has_stored_credentials
     from magister_cli.auth.token_manager import get_token_manager
 
     try:
         validated_school = validate_school_code(school_code)
         token = get_current_token(validated_school)
         can_browser = is_gui_available()
+        has_creds = has_stored_credentials(validated_school)
 
         if token is None:
             return {
@@ -740,12 +742,18 @@ async def check_auth_status(
                 "is_authenticated": False,
                 "school": validated_school,
                 "can_browser_auth": can_browser,
+                "has_stored_credentials": has_creds,
+                "can_headless_auth": has_creds,
                 "resolution": {
                     "action": "login_required",
                     "user_instruction": (
-                        "Use the 'authenticate' tool to open a browser for login"
-                        if can_browser
-                        else f"Run: magister login --school {validated_school}"
+                        "Use 'headless_reauthenticate' for silent login"
+                        if has_creds
+                        else (
+                            "Use the 'authenticate' tool to open a browser for login"
+                            if can_browser
+                            else f"Run: magister login --school {validated_school}"
+                        )
                     ),
                 },
             }
@@ -769,6 +777,8 @@ async def check_auth_status(
             "can_browser_auth": can_browser,
             "has_refresh_token": has_refresh_token,
             "can_silent_refresh": has_refresh_token,
+            "has_stored_credentials": has_creds,
+            "can_headless_auth": has_creds,
         }
     except ValueError as e:
         return {
@@ -1015,7 +1025,33 @@ async def refresh_authentication(
                     "has_refresh_token": new_token.has_refresh_token(),
                 }
             except RuntimeError as e:
-                logger.warning(f"Silent refresh failed, trying browser: {e}")
+                logger.warning(f"Silent refresh failed, trying headless: {e}")
+                # Fall through to headless or browser auth
+
+        # Try headless login if credentials are stored
+        from magister_cli.auth.credential_store import has_stored_credentials
+        from magister_cli.auth.headless_login import try_headless_reauth
+
+        if has_stored_credentials(validated_school):
+            try:
+                headless_token = await try_headless_reauth(validated_school, timeout=60)
+                if headless_token:
+                    return {
+                        "success": True,
+                        "refreshed": True,
+                        "method": "headless_credentials",
+                        "message": "Token refreshed via headless re-authentication",
+                        "school": validated_school,
+                        "student_name": headless_token.person_name,
+                        "expires_at": (
+                            headless_token.expires_at.isoformat()
+                            if headless_token.expires_at
+                            else None
+                        ),
+                        "has_refresh_token": headless_token.has_refresh_token(),
+                    }
+            except Exception as e:
+                logger.warning(f"Headless login failed, trying browser: {e}")
                 # Fall through to browser auth
 
         # Need browser auth - check GUI availability
@@ -1063,6 +1099,269 @@ async def refresh_authentication(
         }
     except Exception:
         logger.exception("Failed to refresh authentication")
+        return {
+            "success": False,
+            "error_type": "internal_error",
+            "message": "An unexpected error occurred",
+        }
+
+
+@mcp.tool()
+async def store_credentials_for_headless(
+    school_code: str,
+    username: str,
+    password: str,
+) -> dict:
+    """
+    Store credentials for headless auto-reauthentication.
+
+    WARNING: This stores your password in the OS keyring. Only use this if
+    you understand and accept the security implications.
+
+    This enables automatic re-authentication when your token expires (~2 hours)
+    without requiring a browser popup. The system will automatically log in
+    using stored credentials.
+
+    IMPORTANT: This does NOT work for schools that require 2FA/MFA.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        username: Your Magister username
+        password: Your Magister password
+
+    Returns:
+        Confirmation with:
+        - success: True if credentials were stored
+        - warning: Security warning about stored credentials
+        - headless_auth_enabled: True if headless auth is now active
+    """
+    from magister_cli.auth.credential_store import store_credentials
+    from magister_cli.config import load_config, save_config
+
+    try:
+        validated_school = validate_school_code(school_code)
+
+        if not username or not password:
+            return {
+                "success": False,
+                "error_type": "validation_error",
+                "message": "Username and password are required",
+            }
+
+        # Store credentials
+        store_credentials(validated_school, username, password)
+
+        # Enable headless auth in config
+        config = load_config()
+        config["headless_auth"] = True
+        save_config(config)
+
+        return {
+            "success": True,
+            "message": "Credentials stored securely in OS keyring",
+            "warning": (
+                "Your password is now stored on this computer. "
+                "Anyone with access to your account can access Magister."
+            ),
+            "school": validated_school,
+            "headless_auth_enabled": True,
+            "how_it_works": (
+                "When your token expires, the system will automatically "
+                "log in using these credentials (headless, no browser popup)."
+            ),
+            "limitation": (
+                "This does NOT work if your school requires 2FA/MFA. "
+                "You will need to fall back to browser login in that case."
+            ),
+        }
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error_type": "validation_error",
+            "message": str(e),
+        }
+    except Exception:
+        logger.exception("Failed to store credentials")
+        return {
+            "success": False,
+            "error_type": "internal_error",
+            "message": "An unexpected error occurred while storing credentials",
+        }
+
+
+@mcp.tool()
+async def clear_stored_credentials(
+    school_code: str,
+) -> dict:
+    """
+    Remove stored credentials for a school.
+
+    This disables headless auto-reauthentication. You'll need to use
+    browser authentication when your token expires.
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+
+    Returns:
+        Result with:
+        - success: True if credentials were removed
+        - headless_auth_enabled: False after clearing
+    """
+    from magister_cli.auth.credential_store import clear_credentials, has_stored_credentials
+
+    try:
+        validated_school = validate_school_code(school_code)
+
+        if not has_stored_credentials(validated_school):
+            return {
+                "success": True,
+                "message": "No stored credentials found for this school",
+                "school": validated_school,
+                "headless_auth_enabled": False,
+            }
+
+        if clear_credentials(validated_school):
+            return {
+                "success": True,
+                "message": "Credentials removed successfully",
+                "school": validated_school,
+                "headless_auth_enabled": False,
+                "info": "You will need to use browser login when your token expires.",
+            }
+        else:
+            return {
+                "success": False,
+                "error_type": "clear_failed",
+                "message": "Could not remove credentials",
+            }
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error_type": "validation_error",
+            "message": str(e),
+        }
+    except Exception:
+        logger.exception("Failed to clear credentials")
+        return {
+            "success": False,
+            "error_type": "internal_error",
+            "message": "An unexpected error occurred while clearing credentials",
+        }
+
+
+@mcp.tool()
+async def headless_reauthenticate(
+    school_code: str,
+    timeout: int = 60,
+) -> dict:
+    """
+    Attempt headless re-authentication using stored credentials.
+
+    This performs an automated browser login in the background using
+    previously stored credentials. No browser window will be visible.
+
+    Prerequisites:
+    - Credentials must be stored via store_credentials_for_headless
+    - School must NOT require 2FA/MFA
+
+    Args:
+        school_code: The Magister school code (e.g., 'vsvonh')
+        timeout: Maximum seconds to wait for login (default: 60)
+
+    Returns:
+        Result with:
+        - success: True if re-authenticated
+        - expires_at: New token expiration time
+        - method: 'headless_credentials'
+    """
+    from magister_cli.auth.credential_store import has_stored_credentials
+    from magister_cli.auth.headless_login import (
+        CredentialsInvalidError,
+        HeadlessLoginError,
+        TwoFactorRequiredError,
+        try_headless_reauth,
+    )
+
+    try:
+        validated_school = validate_school_code(school_code)
+
+        if not has_stored_credentials(validated_school):
+            return {
+                "success": False,
+                "error_type": "no_credentials",
+                "message": "No stored credentials for this school",
+                "resolution": {
+                    "action": "store_credentials",
+                    "user_instruction": (
+                        "Use store_credentials_for_headless to enable headless auth, "
+                        "or use authenticate for browser login."
+                    ),
+                },
+            }
+
+        # Attempt headless login
+        token = await try_headless_reauth(validated_school, timeout)
+
+        if token:
+            return {
+                "success": True,
+                "message": "Headless re-authentication successful",
+                "method": "headless_credentials",
+                "school": validated_school,
+                "student_name": token.person_name,
+                "expires_at": (token.expires_at.isoformat() if token.expires_at else None),
+            }
+        else:
+            return {
+                "success": False,
+                "error_type": "headless_failed",
+                "message": "Headless re-authentication failed",
+                "resolution": {
+                    "action": "use_browser",
+                    "user_instruction": "Use authenticate for browser login instead.",
+                },
+            }
+
+    except TwoFactorRequiredError:
+        return {
+            "success": False,
+            "error_type": "2fa_required",
+            "message": "This school requires 2FA - headless login not possible",
+            "resolution": {
+                "action": "use_browser",
+                "user_instruction": "Use authenticate for browser login with 2FA.",
+            },
+        }
+    except CredentialsInvalidError:
+        return {
+            "success": False,
+            "error_type": "invalid_credentials",
+            "message": "Stored credentials are invalid - they have been cleared",
+            "resolution": {
+                "action": "store_new_credentials",
+                "user_instruction": "Use store_credentials_for_headless with correct password.",
+            },
+        }
+    except HeadlessLoginError as e:
+        return {
+            "success": False,
+            "error_type": "headless_error",
+            "message": str(e),
+            "resolution": {
+                "action": "use_browser",
+                "user_instruction": "Use authenticate for browser login.",
+            },
+        }
+    except ValueError as e:
+        return {
+            "success": False,
+            "error_type": "validation_error",
+            "message": str(e),
+        }
+    except Exception:
+        logger.exception("Failed headless re-authentication")
         return {
             "success": False,
             "error_type": "internal_error",
