@@ -91,6 +91,7 @@ class MagisterAsyncService:
             },
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
             timeout=httpx.Timeout(30.0),
+            follow_redirects=True,  # Required for attachment downloads
         )
 
         # Get account info and person ID
@@ -442,16 +443,31 @@ class MagisterAsyncService:
         output_dir = output_dir or Path.cwd()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine download URL
+        # Determine download URL(s) to try
         if attachment.download_url:
-            url = attachment.download_url
+            urls_to_try = [attachment.download_url]
         else:
-            # Fallback URL pattern
-            url = f"/personen/{self._person_id}/bijlagen/{attachment.id}"
+            # Try multiple fallback URL patterns (different attachment sources)
+            urls_to_try = [
+                f"/berichten/bijlagen/{attachment.id}/download",  # Message attachments
+                f"/personen/{self._person_id}/bijlagen/{attachment.id}",  # Homework attachments
+                f"/leerlingen/{self._person_id}/bijlagen/{attachment.id}/download",  # Alt pattern
+            ]
 
-        # Download file
-        response = await client.get(url)
-        response.raise_for_status()
+        # Download file - try each URL until one works
+        response = None
+        last_error = None
+        for url in urls_to_try:
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if response is None or response.status_code != 200:
+            raise RuntimeError(f"Failed to download attachment {attachment.id}: {last_error or 'Not found'}")
 
         # Sanitize filename to prevent path traversal
         safe_filename = sanitize_filename(attachment.name)
