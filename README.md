@@ -1120,7 +1120,7 @@ See `docs/solutions/setup/dual-architecture-venv-setup.md` for detailed instruct
 
 ## License
 
-MIT
+GPL-3.0 - See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
