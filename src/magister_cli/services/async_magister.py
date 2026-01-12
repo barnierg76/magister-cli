@@ -681,7 +681,8 @@ class MagisterAsyncService:
             message_id: The ID of the message to mark as read
         """
         client = self._ensure_client()
-        response = await client.put(f"/berichten/{message_id}/gelezen")
+        # API uses /berichten/berichten/{id}/gelezen endpoint
+        response = await client.put(f"/berichten/berichten/{message_id}/gelezen")
         response.raise_for_status()
 
     async def delete_message(self, message_id: int) -> None:
@@ -691,7 +692,8 @@ class MagisterAsyncService:
             message_id: The ID of the message to delete
         """
         client = self._ensure_client()
-        response = await client.delete(f"/berichten/{message_id}")
+        # API uses /berichten/berichten/{id} endpoint
+        response = await client.delete(f"/berichten/berichten/{message_id}")
         response.raise_for_status()
 
     # -------------------------------------------------------------------------
