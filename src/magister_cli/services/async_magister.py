@@ -637,15 +637,19 @@ class MagisterAsyncService:
                 "type": cc.get("type", cc.get("Type")),
             })
 
-        # Parse attachments
+        # Fetch attachments from separate endpoint if message has attachments
         bijlagen = []
-        for b in data.get("bijlagen", data.get("Bijlagen", [])):
-            bijlagen.append({
-                "id": b.get("id", b.get("Id")),
-                "name": b.get("naam", b.get("Naam")),
-                "mime_type": b.get("contentType", b.get("ContentType")),
-                "size": b.get("grootte", b.get("Grootte")),
-            })
+        if data.get("heeftBijlagen", data.get("HeeftBijlagen", False)):
+            att_response = await client.get(f"/berichten/berichten/{message_id}/bijlagen")
+            if att_response.status_code == 200:
+                att_data = att_response.json()
+                for b in att_data.get("items", att_data.get("Items", [])):
+                    bijlagen.append({
+                        "id": b.get("id", b.get("Id")),
+                        "name": b.get("naam", b.get("Naam")),
+                        "mime_type": b.get("contentType", b.get("ContentType")),
+                        "size": b.get("grootte", b.get("Grootte")),
+                    })
 
         return {
             "id": data.get("id", data.get("Id")),
