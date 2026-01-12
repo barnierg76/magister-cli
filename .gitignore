@@ -8,6 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+.venv-arm64
+.venv-x86_64
 
 # Environment files
 .env

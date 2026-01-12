@@ -582,20 +582,21 @@ class MagisterAsyncService:
         messages = []
         for item in items:
             # Skip read messages if unread_only is True
-            if unread_only and item.get("IsGelezen", True):
+            # API uses lowercase field names
+            if unread_only and item.get("isGelezen", item.get("IsGelezen", True)):
                 continue
 
-            afzender = item.get("Afzender", {})
+            afzender = item.get("afzender", item.get("Afzender", {})) or {}
             messages.append({
-                "id": item.get("Id"),
-                "subject": item.get("Onderwerp"),
-                "sender_name": afzender.get("Naam"),
-                "sender_type": afzender.get("Type"),
-                "sent_at": item.get("VerzondOp"),
-                "is_read": item.get("IsGelezen", False),
-                "has_attachments": item.get("HeeftBijlagen", False),
-                "priority": item.get("Prioriteit"),
-                "has_priority": item.get("HeeftPrioriteit", False),
+                "id": item.get("id", item.get("Id")),
+                "subject": item.get("onderwerp", item.get("Onderwerp")),
+                "sender_name": afzender.get("naam", afzender.get("Naam")),
+                "sender_type": afzender.get("type", afzender.get("Type")),
+                "sent_at": item.get("verzondenOp", item.get("VerzondOp")),
+                "is_read": item.get("isGelezen", item.get("IsGelezen", False)),
+                "has_attachments": item.get("heeftBijlagen", item.get("HeeftBijlagen", False)),
+                "priority": item.get("prioriteit", item.get("Prioriteit")),
+                "has_priority": item.get("heeftPrioriteit", item.get("HeeftPrioriteit", False)),
             })
 
         return messages
@@ -610,52 +611,54 @@ class MagisterAsyncService:
             Full message dictionary with body, recipients, attachments
         """
         client = self._ensure_client()
-        response = await client.get(f"/berichten/{message_id}")
+        # API uses /berichten/berichten/{id} endpoint
+        response = await client.get(f"/berichten/berichten/{message_id}")
         response.raise_for_status()
 
         data = response.json()
-        afzender = data.get("Afzender", {})
+        # API uses lowercase field names
+        afzender = data.get("afzender", data.get("Afzender", {})) or {}
 
-        # Parse recipients
+        # Parse recipients (ontvangers or kopieOntvangers)
         ontvangers = []
-        for o in data.get("Ontvangers", []):
+        for o in data.get("ontvangers", data.get("Ontvangers", [])):
             ontvangers.append({
-                "id": o.get("Id"),
-                "name": o.get("Naam"),
-                "type": o.get("Type"),
+                "id": o.get("id", o.get("Id")),
+                "name": o.get("naam", o.get("Naam")),
+                "type": o.get("type", o.get("Type")),
             })
 
         # Parse CC recipients
         cc_ontvangers = []
-        for cc in data.get("CCOntvangers", []):
+        for cc in data.get("kopieOntvangers", data.get("CCOntvangers", [])):
             cc_ontvangers.append({
-                "id": cc.get("Id"),
-                "name": cc.get("Naam"),
-                "type": cc.get("Type"),
+                "id": cc.get("id", cc.get("Id")),
+                "name": cc.get("naam", cc.get("Naam")),
+                "type": cc.get("type", cc.get("Type")),
             })
 
         # Parse attachments
         bijlagen = []
-        for b in data.get("Bijlagen", []):
+        for b in data.get("bijlagen", data.get("Bijlagen", [])):
             bijlagen.append({
-                "id": b.get("Id"),
-                "name": b.get("Naam"),
-                "mime_type": b.get("ContentType"),
-                "size": b.get("Grootte"),
+                "id": b.get("id", b.get("Id")),
+                "name": b.get("naam", b.get("Naam")),
+                "mime_type": b.get("contentType", b.get("ContentType")),
+                "size": b.get("grootte", b.get("Grootte")),
             })
 
         return {
-            "id": data.get("Id"),
-            "subject": data.get("Onderwerp"),
-            "sender_name": afzender.get("Naam"),
-            "sender_type": afzender.get("Type"),
-            "sender_id": afzender.get("Id"),
-            "sent_at": data.get("VerzondOp"),
-            "is_read": data.get("IsGelezen", False),
-            "has_attachments": data.get("HeeftBijlagen", False),
-            "priority": data.get("Prioriteit"),
-            "has_priority": data.get("HeeftPrioriteit", False),
-            "body": data.get("Inhoud", ""),
+            "id": data.get("id", data.get("Id")),
+            "subject": data.get("onderwerp", data.get("Onderwerp")),
+            "sender_name": afzender.get("naam", afzender.get("Naam")),
+            "sender_type": afzender.get("type", afzender.get("Type")),
+            "sender_id": afzender.get("id", afzender.get("Id")),
+            "sent_at": data.get("verzondenOp", data.get("VerzondOp")),
+            "is_read": data.get("isGelezen", data.get("IsGelezen", False)),
+            "has_attachments": data.get("heeftBijlagen", data.get("HeeftBijlagen", False)),
+            "priority": data.get("prioriteit", data.get("Prioriteit")),
+            "has_priority": data.get("heeftPrioriteit", data.get("HeeftPrioriteit", False)),
+            "body": data.get("inhoud", data.get("Inhoud", "")),
             "recipients": ontvangers,
             "cc_recipients": cc_ontvangers,
             "attachments": bijlagen,
