@@ -238,4 +238,4 @@ Python is niet (goed) geïnstalleerd. Download Python opnieuw van [python.org](h
 
 ---
 
-**Hulp nodig?** Stel je vraag op [github.com/kieranaudeDev/magister-cli/issues](https://github.com/kieranaudeDev/magister-cli/issues)
+**Hulp nodig?** Stel je vraag op [github.com/barnierg76/magister-cli/issues](https://github.com/barnierg76/magister-cli/issues)
